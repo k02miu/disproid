@@ -38,9 +38,17 @@ if [ -f "$GLYPH" ]; then
     iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/AppIcon.icns" 2>/dev/null || echo "(icns 生成スキップ)"
 fi
 
-# ad-hoc 署名（TCC 許可の安定化のため。リソース .bundle はコードでないため --deep は使わない）
-echo "==> ad-hoc 署名"
-codesign --force --sign - "$APP" >/dev/null 2>&1 || echo "(署名スキップ)"
+# 署名（リソース .bundle はコードでないため --deep は使わない）
+# 自己署名証明書(make-cert.sh)があればそれで署名 → 再ビルドしても画面収録の許可が維持される。
+# 無ければ ad-hoc（毎回許可リセットされる）。
+CERT_NAME="Disproid Self-Signed"
+if security find-identity -p codesigning 2>/dev/null | grep -q "${CERT_NAME}"; then
+    echo "==> sign with cert: ${CERT_NAME}"
+    codesign --force --sign "${CERT_NAME}" "$APP" >/dev/null 2>&1 || echo "(sign failed)"
+else
+    echo "==> ad-hoc sign (no self-signed cert; run make-cert.sh)"
+    codesign --force --sign - "$APP" >/dev/null 2>&1 || echo "(sign skipped)"
+fi
 
 echo "==> 完成: $HERE/$APP"
 echo "起動: open \"$HERE/$APP\""
