@@ -1,49 +1,73 @@
-# Disproid Receiver (Android) — Phase A
+# Disproid Receiver (Android) — Phase B
 
 Android タブレットを Mac のワイヤレス拡張ディスプレイにするための **AirPlay 受信機アプリ**。
-自分を **Apple TV（`AppleTV3,2`）として mDNS 公開**し、macOS の画面ミラーリング一覧に Apple TV 種別のデバイスとして出現させる。
+自分を **Apple TV（`AppleTV3,2`）として mDNS 公開**し、macOS の画面ミラーリング一覧に Apple TV 種別で出現する。
+接続が来ると **UxPlay 由来のネイティブ AirPlay コア**が RTSP/ペアリングのやり取りを行う。
 
-> **Phase A のスコープ**: プロジェクト骨組み + mDNS 公開（発見・列挙されること）まで。
-> 接続後の AirPlay プロトコル（ペアリング・FairPlay・暗号・映像デコード）は次フェーズで、本フェーズでは扱わない。
-> 接続を試みてもスタブ TCP サーバが何もしないため失敗するのは想定内。
+> **フェーズ全体像**
+> - **Phase A（完了）**: プロジェクト骨組み + Apple TV としての mDNS 公開（発見・列挙）。
+> - **Phase B（このフェーズ）**: ネイティブ AirPlay コアのビルド基盤 + 接続確立。
+>   raop(HTTP/RTSP)サーバを起動し、Mac の接続→ペアリング/RTSP のやり取りを行う。**映像表示はまだ**。
+> - **Phase C（次）**: `video_process`(H264)→MediaCodec+Surface、`audio_process`(AAC)→AudioTrack で**画面を表示**。
+> - **Phase D**: 拡張ディスプレイ最適化（解像度ネゴ・回転・遅延・安定化）。
 
-## できること（Phase A）
+## ⚠️ ライセンス注意
 
-- フォアグラウンドサービスで mDNS（`NsdManager`）により `_airplay._tcp` を公開（画面オフでも継続）。
-- TXT レコードに Apple TV 識別属性（`model=AppleTV3,2` 等）を付与。
-- スタブの TCP サーバを listen（接続が来たらログのみ）。
+ネイティブコアは **UxPlay**（リポジトリ全体は **GPLv3**、`lib/` ヘッダは LGPL2.1）を vendoring・移植している。
+このコードをリンクするため、**本アプリの配布物は GPLv3 の制約**（ソース公開義務等）を受ける。クローズド配布を予定する場合は要検討。
 
-## 公開する TXT レコード
+## アーキテクチャ
 
-手本は **UxPlay**（`lib/dnssd.c` の `dnssd_register_airplay` / `lib/dnssdint.h` / `lib/global.h`）。
-UxPlay は同一 LAN 上で `AppleTV3,2` として macOS に Apple TV 種別で列挙される実績があり、`dns-sd` での on-wire 観測値とも一致する。
+```
+Kotlin (アプリシェル)                    Native (libdisproid.so)
+─────────────────────────              ──────────────────────────────
+MainActivity ── 開始/停止 UI
+AdvertiseService (FGS)
+  ├ NativeAirPlay.nativeStart() ──JNI──▶ jni_bridge.c
+  │     └ port / pk を取得                  ├ raop_init / raop_init2(ed25519生成)
+  ├ NsdManager で _airplay._tcp 公開         ├ raop_start_httpd → listen port
+  │   (TXT の pk/features を /info と一致)    ├ dnssd_android.c (TXT/識別子保持)
+  └ video/audio_process (Phase C で描画)◀──── └ UxPlay airplay コア (RTSP/ペアリング/FairPlay/RTP)
+                                                  └ 依存: libplist(同梱ビルド) / libcrypto(prebuilt)
+```
 
-| key | 値 | 備考 |
-|---|---|---|
-| `model` | `AppleTV3,2` | **Apple TV 種別判定の核** |
-| `features` | `0x527FFEE6,0x0` | 機能ビットマスク（UxPlay 観測値, legacy pairing OFF） |
-| `srcvers` | `220.68` | AirPlay ソースバージョン |
-| `flags` | `0x4` | |
-| `pw` | `false` | パスワード不要 |
-| `vv` | `2` | |
-| `deviceid` | ランダム MAC 形式（端末ごとに永続化） | 実 MAC は Android 10+ で取得制限のため生成 |
-| `pi` | ランダム UUID（永続化） | デバイス UUID |
-| `pk` | ランダム 32byte hex（永続化） | ペアリング前のプレースホルダ |
-
-実装は `AirPlayTxtRecord.kt` / `DeviceIdentity.kt`。`要検証` コメント箇所（features ビット構成、srcvers での拡張可否、deviceid/pk の検証要否、FGS タイプ）は今後の実機検証対象。
+- **mDNS 登録**は Kotlin(`NsdManager`)。ネイティブの `dnssd.c`(mDNSResponder 依存)は使わず、
+  データ保持＋TXT 生成だけの `dnssd_android.c` に差し替えている。
+- **映像表示部**(`renderers/`, GStreamer)は移植せず、`video_process`/`audio_process` コールバックで
+  受け取ったエンコード済みフレームを Phase C で MediaCodec/AudioTrack に流す。
 
 ## ビルド環境
 
 - JDK 17（Android Studio 同梱 JBR でよい）
 - Android SDK（compileSdk/targetSdk 34, build-tools 34.0.0）
+- **NDK 27.2.12479018 + CMake 3.22.1**（`sdkmanager` で導入）
 - Gradle 8.10（Wrapper 同梱）/ AGP 8.6.1 / Kotlin 1.9.25
-- 外部ライブラリ依存ゼロ（AndroidX/Compose 不使用、フレームワーク API のみ）
+- 対象 ABI は当面 **arm64-v8a のみ**（Lenovo Yoga Pad Pro）
 
 `local.properties` に SDK パスが必要（git 管理外）:
 
 ```properties
 sdk.dir=/Users/<you>/Library/Android/sdk
 ```
+
+### 前提: NDK / CMake の導入
+
+```bash
+SDKM=~/Library/Android/sdk/cmdline-tools/latest/bin/sdkmanager
+yes | "$SDKM" --install "ndk;27.2.12479018" "cmake;3.22.1"
+```
+
+### 前提: OpenSSL(libcrypto) のクロスコンパイル（初回のみ）
+
+OpenSSL の prebuilt は容量が大きいため git 管理外。初回ビルド前に 1 度だけ生成する:
+
+```bash
+cd android/native-deps
+bash build-openssl-android.sh
+# → app/src/main/cpp/prebuilt/openssl/{include, lib/arm64-v8a/libcrypto.a} が生成される
+```
+
+> libplist は autotools を使わず、vendoring 済みソースを CMake で直接ビルドするため追加手順は不要。
 
 ## ビルド
 
@@ -52,58 +76,59 @@ cd android
 export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
 ./gradlew :app:assembleDebug
 # APK: app/build/outputs/apk/debug/app-debug.apk
+# CMake が libplist/airplay/JNI をコンパイルし libdisproid.so にリンクする
 ```
 
 ## 実機インストール
 
-USB デバッグを有効にしたタブレットを接続:
-
 ```bash
-adb devices                       # デバイスが見えることを確認
+adb devices
 adb install -r app/build/outputs/apk/debug/app-debug.apk
-# もしくは
-./gradlew :app:installDebug
 ```
 
 ## 動作確認手順
 
-1. タブレットとビルド用 Mac を **同じ Wi-Fi（同一サブネット）** に接続する。
-2. アプリを起動し「公開を開始」を押す（通知許可を求められたら許可）。画面に `公開中: …` と表示される。
-3. **Mac 側**で確認:
-   - `dns-sd` で公開を観測:
-     ```bash
-     dns-sd -B _airplay._tcp        # 一覧に "Disproid Receiver" が出る
-     dns-sd -L "Disproid Receiver" _airplay._tcp local   # TXT に model=AppleTV3,2 を確認
-     ```
-   - コントロールセンター → 画面ミラーリングに、このタブレットが **Apple TV 種別**で出現する。
-4. （想定内）クリックして接続すると、Phase A はスタブのため接続は失敗する。
-5. 「停止」またはアプリ終了で公開が消える。
+1. タブレットと Mac を **同じ Wi-Fi（同一サブネット）** に接続。
+2. アプリ起動 →「公開を開始」。状態に `公開中: … model=AppleTV3,2` が出る。
+3. **Mac 側**:
+   - `dns-sd -B _airplay._tcp` に "Disproid Receiver" が出る。
+   - コントロールセンター → 画面ミラーリングに **Apple TV 種別**で出現。
+4. **接続を試す**: 一覧から選んで接続を開始すると、ネイティブ raop が応答し、
+   RTSP/ペアリングのやり取りが始まる。映像はまだ出ない（Phase C 未実装）が、
+   ハンドシェイクが進む様子をログで確認できる:
+   ```bash
+   adb logcat -s DisproidNative DisproidReceiver
+   # 例: "接続要求: ... -> 受理", "conn_init", "video_set_codec=1", "video_process: N bytes (Phase B: 破棄)"
+   ```
+5. 「停止」で raop 停止 + mDNS 公開解除。
 
-## トラブルシュート
+> Phase B の到達点は「Mac が接続し、ペアリング/RTSP のやり取りが logcat に出る」こと。
+> 画面が映るのは Phase C。
 
-- **一覧に出ない**: タブレットと Mac が同一サブネットか、Wi-Fi の AP 分離（クライアント間通信遮断）が無効か確認。
-- **TXT が一部欠ける / サービスタイプが化ける**: `NsdManager` の既知の癖。`AirPlayTxtRecord` はそのままに、登録経路を jmdns へ差し替える（次手・本フェーズの代替案）。
-- **FGS が即停止する（API 34+）**: `foregroundServiceType=connectedDevice` と対応権限を確認。
-
-## 構成
+## ネイティブ構成
 
 ```
-android/
-  settings.gradle.kts / build.gradle.kts / gradle.properties
-  app/
-    build.gradle.kts
-    src/main/AndroidManifest.xml
-    src/main/kotlin/io/disproid/receiver/
-      MainActivity.kt        # 最小 UI（開始/停止/状態）
-      AdvertiseService.kt    # FGS: TCP listen + NsdManager 公開
-      AirPlayTxtRecord.kt    # TXT レコード定義（UxPlay 手本）
-      DeviceIdentity.kt      # deviceid/pi/pk の生成・永続化
-      StatusBus.kt           # サービス→UI の状態通知
-    src/main/res/...         # layout / strings
+app/src/main/cpp/
+  CMakeLists.txt              # libplist + airplay + JNI を libdisproid.so にリンク
+  jni_bridge.c                # JNI: raop 起動/停止、コールバック(現状ログ)、pk 取り出し
+  airplay/                    # UxPlay lib/ を vendoring(renderers除外)
+    dnssd_android.c           #   mDNSResponder 依存の dnssd.c を Android 用に差し替え
+    llhttp/  playfair/        #   HTTP パーサ / FairPlay
+  third_party/libplist/       # libplist(依存ゼロ, CMake 直ビルド) + 手書き config.h
+  prebuilt/openssl/           # libcrypto.a + headers(スクリプトで生成, git管理外)
+native-deps/
+  build-openssl-android.sh    # OpenSSL クロスコンパイル
+  src/                        # openssl/libplist の clone(git管理外)
 ```
 
-## スコープ外（次フェーズ）
+## 要検証（実機・次フェーズ）
 
-- AirPlay プロトコル本体（UxPlay の C/C++ コアを JNI 移植）
-- ペアリング / FairPlay / 暗号
-- MediaCodec / Surface による映像デコード・表示
+- ペアリングフロー（`check_register`/`register_client`/`report_client_request`）の正否
+- `srcvers=220.68`(legacy) で拡張表示まで到達できるか
+- ed25519 鍵の永続化（`filesDir/airplay_ed25519.key`）と再ペアリング挙動
+- FGS タイプ `connectedDevice` の妥当性
+
+## スコープ外（Phase C 以降）
+
+- `video_process`/`audio_process` の実描画（MediaCodec + Surface / AudioTrack）
+- 拡張ディスプレイの解像度ネゴシエーション・回転・遅延最適化
