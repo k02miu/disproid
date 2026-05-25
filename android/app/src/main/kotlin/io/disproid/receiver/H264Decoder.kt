@@ -2,110 +2,241 @@ package io.disproid.receiver
 
 import android.media.MediaCodec
 import android.media.MediaFormat
+import android.os.Build
 import android.util.Log
 import android.view.Surface
 import java.nio.ByteBuffer
+import java.util.ArrayDeque
+import java.util.concurrent.ArrayBlockingQueue
+import java.util.concurrent.TimeUnit
 
 /**
- * H.264(Annex-B) を MediaCodec でデコードし Surface に直接描画する。
+ * H.264(Annex-B) を MediaCodec でデコードし Surface へ描画する。
  *
- * UxPlay の video_process は Annex-B（00 00 00 01 区切り、SPS/PPS は IDR 先頭に prepend）で
- * フレームを渡すため、in-band の SPS/PPS でデコーダが構成される。
- *
- * onVideoFrame はネイティブ(mirror RTP)スレッドから同期的に呼ばれる。
- * Surface の設定/解除は UI スレッド。両者を [lock] で保護する。
+ * Phase D（性能・安定）:
+ *  - デコードを専用スレッドに分離し、ネイティブ(mirror RTP)スレッドを塞がない。
+ *    onVideoFrame はフレームをコピーして有界キューへ積むだけ（滞留時は最古を破棄＝低遅延維持）。
+ *  - 低遅延モード(KEY_LOW_LATENCY/PRIORITY)で glass-to-glass を短縮。
+ *  - 開始/再接続時はキーフレーム(SPS/IDR)まで投入を待ち、初期の緑化・デコードエラーを回避。
+ *  - ミラー終了で flush、解像度変化で再構成、例外時に再構成。
  */
 class H264Decoder : VideoSink {
 
-    private val lock = Any()
-    private var codec: MediaCodec? = null
-    private var surface: Surface? = null
-    private var width = 1920
-    private var height = 1080
+    private class Frame(@JvmField var data: ByteArray, @JvmField var len: Int, @JvmField var ptsUs: Long)
 
-    fun setSurface(s: Surface?) {
-        synchronized(lock) {
-            surface = s
-            if (s == null) releaseCodecLocked()
+    private val queue = ArrayBlockingQueue<Frame>(QUEUE_CAP)
+
+    // ByteArray プール（GC 圧を抑える）
+    private val poolLock = Any()
+    private val pool = ArrayDeque<ByteArray>()
+
+    @Volatile private var surface: Surface? = null
+    @Volatile private var running = false
+    private var worker: Thread? = null
+
+    @Volatile private var width = 1920
+    @Volatile private var height = 1080
+    @Volatile private var pendingReconfigure = false
+    @Volatile private var needFlush = false
+
+    // ---- VideoSink（ネイティブスレッドから） ----
+
+    override fun onVideoFormat(width: Int, height: Int) {
+        if (width > 0 && height > 0 && (width != this.width || height != this.height)) {
+            this.width = width
+            this.height = height
+            pendingReconfigure = true
         }
     }
 
-    override fun onVideoFormat(width: Int, height: Int) {
-        synchronized(lock) {
-            if (width > 0 && height > 0) {
-                this.width = width
-                this.height = height
-            }
+    override fun onVideoFrame(buffer: ByteBuffer, len: Int, ptsUs: Long) {
+        if (!running || len <= 0) return
+        // ネイティブバッファは呼び出し中のみ有効 → コピーしてキューへ。即 return。
+        val arr = obtain(len)
+        buffer.position(0)
+        buffer.limit(len)
+        buffer.get(arr, 0, len)
+        val frame = Frame(arr, len, ptsUs)
+        if (!queue.offer(frame)) {
+            queue.poll()?.let { recycle(it.data) }  // 滞留時は最古を捨てて遅延を抑える
+            if (!queue.offer(frame)) recycle(arr)
         }
     }
 
     override fun onMirrorState(running: Boolean) {
         if (!running) {
-            synchronized(lock) { releaseCodecLocked() }
+            clearQueue()
+            needFlush = true   // 次接続に備えてデコーダをflushしキーフレーム待ちに戻す
         }
     }
 
-    override fun onVideoFrame(buffer: ByteBuffer, len: Int, ptsUs: Long) {
-        synchronized(lock) {
-            val s = surface ?: return
-            val c = ensureCodecLocked(s) ?: return
-            try {
-                val inIdx = c.dequeueInputBuffer(IN_TIMEOUT_US)
-                if (inIdx >= 0) {
-                    val ib = c.getInputBuffer(inIdx) ?: return
-                    ib.clear()
-                    buffer.position(0)
-                    buffer.limit(len)
-                    if (len <= ib.remaining()) {
-                        ib.put(buffer)
-                        c.queueInputBuffer(inIdx, 0, len, ptsUs, 0)
-                    } else {
-                        // 入力バッファより大きいフレーム（通常起きない）。今回は破棄。
-                        Log.w(TAG, "フレームが入力バッファ超過: $len > ${ib.remaining()}")
-                        c.queueInputBuffer(inIdx, 0, 0, ptsUs, 0)
+    // ---- ライフサイクル（UI スレッド） ----
+
+    fun setSurface(s: Surface?) {
+        if (s != null) {
+            surface = s
+            startWorker()
+        } else {
+            stopWorker()
+            surface = null
+        }
+    }
+
+    private fun startWorker() {
+        if (worker != null) return
+        running = true
+        worker = Thread({ loop() }, "disproid-decoder").also { it.start() }
+    }
+
+    private fun stopWorker() {
+        running = false
+        worker?.let { try { it.join(800) } catch (_: InterruptedException) {} }
+        worker = null
+        clearQueue()
+    }
+
+    // ---- デコードループ（専用スレッド） ----
+
+    private fun loop() {
+        var codec: MediaCodec? = null
+        var sawKeyframe = false
+        try {
+            while (running) {
+                val s = surface ?: run { Thread.sleep(5); null } ?: continue
+
+                if (codec == null || pendingReconfigure) {
+                    codec?.let { safeRelease(it) }
+                    pendingReconfigure = false
+                    sawKeyframe = false
+                    codec = configure(s)
+                    if (codec == null) { Thread.sleep(15); continue }
+                }
+                val c = codec!!
+
+                if (needFlush) {
+                    needFlush = false
+                    sawKeyframe = false
+                    try { c.flush() } catch (_: IllegalStateException) {}
+                }
+
+                val frame = queue.poll(15, TimeUnit.MILLISECONDS)
+                if (frame != null) {
+                    try {
+                        if (!sawKeyframe && containsSpsOrIdr(frame.data, frame.len)) {
+                            sawKeyframe = true
+                        }
+                        if (sawKeyframe) feed(c, frame)
+                    } catch (e: IllegalStateException) {
+                        Log.e(TAG, "feed 失敗、再構成します", e)
+                        safeRelease(c); codec = null; sawKeyframe = false
+                    } finally {
+                        recycle(frame.data)
                     }
                 }
-                // 出力を Surface に描画
-                val info = MediaCodec.BufferInfo()
-                var outIdx = c.dequeueOutputBuffer(info, 0)
-                while (outIdx >= 0) {
-                    c.releaseOutputBuffer(outIdx, true) // render=true
-                    outIdx = c.dequeueOutputBuffer(info, 0)
-                }
-            } catch (e: IllegalStateException) {
-                Log.e(TAG, "デコード中エラー、再構成します", e)
-                releaseCodecLocked()
+                codec?.let { drain(it) }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "decoder loop 例外", e)
+        } finally {
+            codec?.let { safeRelease(it) }
+        }
+    }
+
+    private fun feed(c: MediaCodec, f: Frame) {
+        // 専用スレッドなのでここでのブロックは受信を阻害しない（最大 ~8ms 待つ）
+        val inIdx = c.dequeueInputBuffer(8_000)
+        if (inIdx < 0) return
+        val ib = c.getInputBuffer(inIdx) ?: return
+        ib.clear()
+        if (f.len <= ib.remaining()) {
+            ib.put(f.data, 0, f.len)
+            c.queueInputBuffer(inIdx, 0, f.len, f.ptsUs, 0)
+        } else {
+            Log.w(TAG, "フレーム超過: ${f.len} > ${ib.remaining()}")
+            c.queueInputBuffer(inIdx, 0, 0, f.ptsUs, 0)
+        }
+    }
+
+    private fun drain(c: MediaCodec) {
+        val info = MediaCodec.BufferInfo()
+        var idx = c.dequeueOutputBuffer(info, 0)
+        while (idx >= 0) {
+            c.releaseOutputBuffer(idx, true) // render=true で Surface へ即描画
+            idx = c.dequeueOutputBuffer(info, 0)
+        }
+    }
+
+    private fun configure(s: Surface): MediaCodec? = try {
+        val fmt = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC, width, height)
+        fmt.setInteger(MediaFormat.KEY_FRAME_RATE, 60)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            fmt.setInteger(MediaFormat.KEY_LOW_LATENCY, 1) // 低遅延モード
+        }
+        // realtime 優先（0=最高優先）
+        fmt.setInteger(MediaFormat.KEY_PRIORITY, 0)
+        val c = MediaCodec.createDecoderByType(MediaFormat.MIMETYPE_VIDEO_AVC)
+        c.configure(fmt, s, null, 0)
+        c.start()
+        Log.i(TAG, "MediaCodec 構成: ${width}x${height} lowLatency=${Build.VERSION.SDK_INT >= Build.VERSION_CODES.R}")
+        c
+    } catch (e: Exception) {
+        Log.e(TAG, "MediaCodec 構成失敗", e)
+        null
+    }
+
+    private fun safeRelease(c: MediaCodec) {
+        try { c.stop() } catch (_: Exception) {}
+        try { c.release() } catch (_: Exception) {}
+    }
+
+    // ---- Annex-B から SPS(7)/IDR(5) NAL を検出 ----
+    private fun containsSpsOrIdr(d: ByteArray, len: Int): Boolean {
+        var i = 0
+        while (i + 3 < len) {
+            val b0 = d[i].toInt() and 0xFF
+            val b1 = d[i + 1].toInt() and 0xFF
+            val b2 = d[i + 2].toInt() and 0xFF
+            val nalPos: Int = when {
+                b0 == 0 && b1 == 0 && b2 == 1 -> i + 3
+                b0 == 0 && b1 == 0 && b2 == 0 && (i + 3 < len) && (d[i + 3].toInt() and 0xFF) == 1 -> i + 4
+                else -> { i++; continue }
+            }
+            if (nalPos < len) {
+                val t = d[nalPos].toInt() and 0x1F
+                if (t == 7 || t == 5) return true // SPS or IDR
+            }
+            i = nalPos + 1
+        }
+        return false
+    }
+
+    // ---- ByteArray プール ----
+    private fun obtain(len: Int): ByteArray {
+        synchronized(poolLock) {
+            val it = pool.iterator()
+            while (it.hasNext()) {
+                val a = it.next()
+                if (a.size >= len) { it.remove(); return a }
             }
         }
+        return ByteArray(maxOf(len, 64 * 1024))
     }
 
-    private fun ensureCodecLocked(s: Surface): MediaCodec? {
-        codec?.let { return it }
-        return try {
-            val fmt = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC, width, height)
-            val c = MediaCodec.createDecoderByType(MediaFormat.MIMETYPE_VIDEO_AVC)
-            c.configure(fmt, s, null, 0)
-            c.start()
-            Log.i(TAG, "MediaCodec(video/avc) 構成: ${width}x${height}")
-            codec = c
-            c
-        } catch (e: Exception) {
-            Log.e(TAG, "MediaCodec 構成失敗", e)
-            null
+    private fun recycle(arr: ByteArray) {
+        synchronized(poolLock) {
+            if (pool.size < QUEUE_CAP + 2) pool.addLast(arr)
         }
     }
 
-    private fun releaseCodecLocked() {
-        codec?.let {
-            try { it.stop() } catch (_: Exception) {}
-            try { it.release() } catch (_: Exception) {}
-            Log.i(TAG, "MediaCodec 解放")
+    private fun clearQueue() {
+        while (true) {
+            val f = queue.poll() ?: break
+            recycle(f.data)
         }
-        codec = null
     }
 
     companion object {
         private const val TAG = "DisproidReceiver"
-        private const val IN_TIMEOUT_US = 10_000L
+        private const val QUEUE_CAP = 6
     }
 }
