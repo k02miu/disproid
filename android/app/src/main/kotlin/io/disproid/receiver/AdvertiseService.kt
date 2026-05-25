@@ -131,10 +131,14 @@ class AdvertiseService : Service() {
         } catch (e: Throwable) {
             Log.w(TAG, "ディスプレイ情報取得失敗、既定値を使用", e)
         }
-        // landscape（長辺を width に）
-        val lw = maxOf(w, h)
-        val lh = minOf(w, h)
-        return Triple(lw, lh, hz)
+        // landscape（長辺を width に）の実アスペクト比を保ちつつ、
+        // macOS が受理しやすいよう width=1920 基準の標準的な解像度へ正規化する。
+        // （生のパネル解像度をそのまま報告すると AppleTV5,3 が受け付けず映像が止まるため）
+        val pw = maxOf(w, h)
+        val ph = minOf(w, h)
+        val targetW = 1920
+        val targetH = (targetW.toLong() * ph / pw).toInt().let { it - (it % 2) } // 偶数化
+        return Triple(targetW, targetH, hz)
     }
 
     /** ミラー開始時に全画面 MirrorActivity を起動する（ベストエフォート）。
