@@ -34,6 +34,32 @@ extern const char *dnssd_get_pk(dnssd_t *dnssd);
 static raop_t *g_raop = NULL;
 static dnssd_t *g_dnssd = NULL;
 
+/* ---- Phase C: 映像フレームの Kotlin への受け渡し ---- */
+static JavaVM *g_vm = NULL;
+static jobject g_video_sink = NULL;       /* VideoSink のグローバル参照 */
+static jmethodID g_mid_on_format = NULL;  /* onVideoFormat(II)V */
+static jmethodID g_mid_on_frame = NULL;   /* onVideoFrame(Ljava/nio/ByteBuffer;IJ)V */
+static jmethodID g_mid_on_mirror = NULL;  /* onMirrorState(Z)V */
+
+JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM *vm, void *reserved) {
+    (void) reserved;
+    g_vm = vm;
+    return JNI_VERSION_1_6;
+}
+
+/* ネイティブスレッド(mirror RTP)から JNIEnv を得る。必要なら attach（detach はしない）。 */
+static JNIEnv *get_env(void) {
+    if (!g_vm) return NULL;
+    JNIEnv *env = NULL;
+    int st = (*g_vm)->GetEnv(g_vm, (void **) &env, JNI_VERSION_1_6);
+    if (st == JNI_EDETACHED) {
+        if ((*g_vm)->AttachCurrentThread(g_vm, &env, NULL) != 0) {
+            return NULL;
+        }
+    }
+    return env;
+}
+
 /* ---- ログコールバック: UxPlay -> logcat ---- */
 static void log_callback(void *cls, int level, const char *msg) {
     (void) cls;
@@ -61,7 +87,24 @@ static void cb_audio_process(void *cls, raop_ntp_t *ntp, audio_decode_struct *da
 }
 static void cb_video_process(void *cls, raop_ntp_t *ntp, video_decode_struct *data) {
     (void) cls; (void) ntp;
-    LOGI("video_process: %d bytes (Phase B: 破棄)", data ? data->data_len : 0);
+    if (!data || !data->data || data->data_len <= 0) return;
+    if (!g_video_sink || !g_mid_on_frame) return; /* sink 未登録なら破棄 */
+
+    JNIEnv *env = get_env();
+    if (!env) return;
+
+    /* data->data を direct ByteBuffer でラップ（コールバック中のみ有効）。
+     * Kotlin 側は同期的に MediaCodec 入力へコピーする。 */
+    jobject buf = (*env)->NewDirectByteBuffer(env, data->data, data->data_len);
+    if (buf) {
+        /* pts: AirPlay の ntp_time_local(ns) をマイクロ秒に */
+        jlong pts_us = (jlong) (data->ntp_time_local / 1000ULL);
+        (*env)->CallVoidMethod(env, g_video_sink, g_mid_on_frame, buf, (jint) data->data_len, pts_us);
+        (*env)->DeleteLocalRef(env, buf);
+        if ((*env)->ExceptionCheck(env)) {
+            (*env)->ExceptionClear(env);
+        }
+    }
 }
 static void cb_video_pause(void *cls)  { (void) cls; }
 static void cb_video_resume(void *cls) { (void) cls; }
@@ -81,9 +124,27 @@ static void cb_audio_get_format(void *cls, unsigned char *ct, unsigned short *sp
 }
 static void cb_video_report_size(void *cls, float *ws, float *hs, float *w, float *h) {
     (void) cls;
-    if (ws && hs && w && h) LOGI("video_report_size: src=%.0fx%.0f disp=%.0fx%.0f", *ws, *hs, *w, *h);
+    if (!(ws && hs && w && h)) return;
+    LOGI("video_report_size: src=%.0fx%.0f disp=%.0fx%.0f", *ws, *hs, *w, *h);
+    if (g_video_sink && g_mid_on_format) {
+        JNIEnv *env = get_env();
+        if (env) {
+            (*env)->CallVoidMethod(env, g_video_sink, g_mid_on_format, (jint) *ws, (jint) *hs);
+            if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+        }
+    }
 }
-static void cb_mirror_video_running(void *cls, bool running) { (void) cls; LOGI("mirror_video_running=%d", running); }
+static void cb_mirror_video_running(void *cls, bool running) {
+    (void) cls;
+    LOGI("mirror_video_running=%d", running);
+    if (g_video_sink && g_mid_on_mirror) {
+        JNIEnv *env = get_env();
+        if (env) {
+            (*env)->CallVoidMethod(env, g_video_sink, g_mid_on_mirror, (jboolean) running);
+            if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+        }
+    }
+}
 
 static void cb_report_client_request(void *cls, char *deviceid, char *model, char *name, bool *admit) {
     (void) cls;
@@ -240,6 +301,31 @@ Java_io_disproid_receiver_NativeAirPlay_nativeGetPublicKey(JNIEnv *env, jobject 
     (void) thiz;
     const char *pk = g_dnssd ? dnssd_get_pk(g_dnssd) : NULL;
     return (*env)->NewStringUTF(env, pk ? pk : "");
+}
+
+/* 映像フレームの受け取り先(VideoSink)を登録/解除する。null で解除。 */
+JNIEXPORT void JNICALL
+Java_io_disproid_receiver_NativeAirPlay_nativeSetVideoSink(JNIEnv *env, jobject thiz, jobject sink) {
+    (void) thiz;
+    if (g_video_sink) {
+        (*env)->DeleteGlobalRef(env, g_video_sink);
+        g_video_sink = NULL;
+    }
+    g_mid_on_format = NULL;
+    g_mid_on_frame = NULL;
+    g_mid_on_mirror = NULL;
+
+    if (sink) {
+        g_video_sink = (*env)->NewGlobalRef(env, sink);
+        jclass cls = (*env)->GetObjectClass(env, sink);
+        g_mid_on_format = (*env)->GetMethodID(env, cls, "onVideoFormat", "(II)V");
+        g_mid_on_frame = (*env)->GetMethodID(env, cls, "onVideoFrame", "(Ljava/nio/ByteBuffer;IJ)V");
+        g_mid_on_mirror = (*env)->GetMethodID(env, cls, "onMirrorState", "(Z)V");
+        (*env)->DeleteLocalRef(env, cls);
+        LOGI("VideoSink 登録");
+    } else {
+        LOGI("VideoSink 解除");
+    }
 }
 
 JNIEXPORT void JNICALL
