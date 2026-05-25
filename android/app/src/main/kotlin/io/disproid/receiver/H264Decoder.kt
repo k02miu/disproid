@@ -40,6 +40,11 @@ class H264Decoder : VideoSink {
     @Volatile private var pendingReconfigure = false
     @Volatile private var needFlush = false
 
+    // ストリームから抽出したパラメータセット（Annex-B, start code 付き）。csd に使う。
+    private var sps: ByteArray? = null
+    private var pps: ByteArray? = null
+    private var vps: ByteArray? = null
+
     /** 最初のフレームを描画した瞬間に1度だけ呼ばれる（接続待ち表示を消す用）。 */
     @Volatile var onFirstFrame: (() -> Unit)? = null
     @Volatile private var firstFrameDone = false
@@ -121,6 +126,7 @@ class H264Decoder : VideoSink {
 
     private fun loop() {
         var codec: MediaCodec? = null
+        var sawKeyframe = false
         var statT0 = System.currentTimeMillis()
         try {
             while (running) {
@@ -131,27 +137,44 @@ class H264Decoder : VideoSink {
                 }
                 val s = surface ?: run { Thread.sleep(5); null } ?: continue
 
-                if (codec == null || pendingReconfigure) {
-                    codec?.let { safeRelease(it) }
+                // コーデック種別/解像度変更 → 破棄して csd を集め直す
+                if (pendingReconfigure) {
                     pendingReconfigure = false
-                    codec = configure(s)
-                    if (codec == null) { Thread.sleep(15); continue }
+                    codec?.let { safeRelease(it) }; codec = null
+                    sps = null; pps = null; vps = null; sawKeyframe = false
                 }
-                val c = codec!!
-
+                // 再接続(AirPlay)時はキーフレーム待ちに戻し csd も集め直す
                 if (needFlush) {
                     needFlush = false
-                    try { c.flush() } catch (_: IllegalStateException) {}
+                    codec?.let { safeRelease(it) }; codec = null
+                    sps = null; pps = null; vps = null; sawKeyframe = false
                 }
 
                 val frame = queue.poll(15, TimeUnit.MILLISECONDS)
                 if (frame != null) {
                     try {
-                        // 全フレームを投入する。デコーダは内部でキーフレームまで出力を待つ。
-                        feed(c, frame)
-                    } catch (e: IllegalStateException) {
-                        Log.e(TAG, "feed 失敗、再構成します", e)
-                        safeRelease(c); codec = null
+                        // 未構成: SPS/PPS(VPS) を集め、揃ったら csd 付きで構成する
+                        if (codec == null) {
+                            extractParamSets(frame.data, frame.len)
+                            if (haveAllParamSets()) {
+                                codec = configureWithCsd(s)
+                                sawKeyframe = false
+                            }
+                        }
+                        val c = codec
+                        if (c != null) {
+                            // キーフレーム(IDR)から投入開始（P フレーム先行による破綻を防ぐ）
+                            if (!sawKeyframe && containsIdr(frame.data, frame.len)) sawKeyframe = true
+                            if (sawKeyframe) {
+                                try {
+                                    feed(c, frame)
+                                } catch (e: IllegalStateException) {
+                                    Log.e(TAG, "feed 失敗、再構成します", e)
+                                    safeRelease(c); codec = null
+                                    sps = null; pps = null; vps = null; sawKeyframe = false
+                                }
+                            }
+                        }
                     } finally {
                         recycle(frame.data)
                     }
@@ -195,23 +218,91 @@ class H264Decoder : VideoSink {
         }
     }
 
-    private fun configure(s: Surface): MediaCodec? = try {
+    /** 抽出済みの SPS/PPS(VPS) を csd として MediaCodec を構成する。
+     *  一部の HW デコーダは構成時に csd を要求するため、in-band 依存をやめて明示指定する。 */
+    private fun configureWithCsd(s: Surface): MediaCodec? = try {
         val mime = if (isH265) MediaFormat.MIMETYPE_VIDEO_HEVC else MediaFormat.MIMETYPE_VIDEO_AVC
         val fmt = MediaFormat.createVideoFormat(mime, width, height)
         fmt.setInteger(MediaFormat.KEY_FRAME_RATE, 60)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            fmt.setInteger(MediaFormat.KEY_LOW_LATENCY, 1) // 低遅延モード
+            fmt.setInteger(MediaFormat.KEY_LOW_LATENCY, 1)
         }
-        // realtime 優先（0=最高優先）
         fmt.setInteger(MediaFormat.KEY_PRIORITY, 0)
+        if (isH265) {
+            // HEVC: csd-0 に VPS+SPS+PPS をまとめて
+            val combined = (vps ?: ByteArray(0)) + (sps ?: ByteArray(0)) + (pps ?: ByteArray(0))
+            fmt.setByteBuffer("csd-0", ByteBuffer.wrap(combined))
+        } else {
+            sps?.let { fmt.setByteBuffer("csd-0", ByteBuffer.wrap(it)) }
+            pps?.let { fmt.setByteBuffer("csd-1", ByteBuffer.wrap(it)) }
+        }
         val c = MediaCodec.createDecoderByType(mime)
         c.configure(fmt, s, null, 0)
         c.start()
-        Log.i(TAG, "MediaCodec 構成: $mime ${width}x${height} lowLatency=${Build.VERSION.SDK_INT >= Build.VERSION_CODES.R}")
+        Log.i(TAG, "MediaCodec 構成: $mime ${width}x${height} (csd付き)")
         c
     } catch (e: Exception) {
         Log.e(TAG, "MediaCodec 構成失敗", e)
         null
+    }
+
+    private fun haveAllParamSets(): Boolean =
+        if (isH265) (vps != null && sps != null && pps != null) else (sps != null && pps != null)
+
+    /** Annex-B の各 NAL を走査する。action(type, startWithStartCode, endExclusive)。 */
+    private inline fun forEachNal(d: ByteArray, len: Int, action: (Int, Int, Int) -> Unit) {
+        val starts = ArrayList<Int>()   // start code 先頭位置
+        val nalPositions = ArrayList<Int>() // NAL ヘッダ位置
+        var i = 0
+        while (i + 3 <= len) {
+            val b0 = d[i].toInt() and 0xFF
+            val b1 = d[i + 1].toInt() and 0xFF
+            val b2 = d[i + 2].toInt() and 0xFF
+            if (b0 == 0 && b1 == 0 && b2 == 1) {
+                starts.add(i); nalPositions.add(i + 3); i += 3
+            } else if (b0 == 0 && b1 == 0 && b2 == 0 && i + 3 < len && (d[i + 3].toInt() and 0xFF) == 1) {
+                starts.add(i); nalPositions.add(i + 4); i += 4
+            } else {
+                i++
+            }
+        }
+        for (k in starts.indices) {
+            val nalPos = nalPositions[k]
+            if (nalPos >= len) continue
+            val nb = d[nalPos].toInt() and 0xFF
+            val type = if (isH265) (nb shr 1) and 0x3F else nb and 0x1F
+            val end = if (k + 1 < starts.size) starts[k + 1] else len
+            action(type, starts[k], end)
+        }
+    }
+
+    private fun extractParamSets(d: ByteArray, len: Int) {
+        forEachNal(d, len) { type, start, end ->
+            if (isH265) {
+                when (type) {
+                    32 -> vps = d.copyOfRange(start, end)
+                    33 -> sps = d.copyOfRange(start, end)
+                    34 -> pps = d.copyOfRange(start, end)
+                }
+            } else {
+                when (type) {
+                    7 -> sps = d.copyOfRange(start, end)
+                    8 -> pps = d.copyOfRange(start, end)
+                }
+            }
+        }
+    }
+
+    private fun containsIdr(d: ByteArray, len: Int): Boolean {
+        var found = false
+        forEachNal(d, len) { type, _, _ ->
+            if (isH265) {
+                if (type in 16..21) found = true   // BLA/IDR/CRA (IRAP)
+            } else {
+                if (type == 5) found = true        // IDR
+            }
+        }
+        return found
     }
 
     private fun safeRelease(c: MediaCodec) {
