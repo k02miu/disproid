@@ -9,4 +9,7 @@
     <!-- 状態インジケータ -->
     <color name="status_idle">#9E9E9E</color>
     <color name="status_active">#00C853</color>
+
+    <!-- アプリアイコン背景（白） -->
+    <color name="ic_launcher_background">#FFFFFF</color>
 </resources>

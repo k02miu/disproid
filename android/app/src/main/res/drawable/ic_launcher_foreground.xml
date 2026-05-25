@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- アダプティブアイコン前景: グリフを安全領域(中央)に収めるため inset する。 -->
+<inset xmlns:android="http://schemas.android.com/apk/res/android"
+    android:drawable="@mipmap/ic_launcher_glyph"
+    android:inset="18dp" />
