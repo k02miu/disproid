@@ -10,5 +10,6 @@
     <string name="resolution_label">解像度</string>
     <string name="action_start">公開を開始</string>
     <string name="action_stop">停止</string>
+    <string name="action_usb">USB で受信（ケーブル接続時）</string>
     <string name="mirror_connecting">接続を待っています…</string>
 </resources>

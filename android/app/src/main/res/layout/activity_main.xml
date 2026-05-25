@@ -101,6 +101,21 @@
                         android:layout_height="wrap_content"
                         android:enabled="false"
                         android:text="@string/action_stop" />
+
+                    <com.google.android.material.divider.MaterialDivider
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="20dp"
+                        android:layout_marginBottom="12dp" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/usbButton"
+                        style="@style/Widget.Material3.Button.OutlinedButton"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        app:icon="@android:drawable/stat_sys_data_bluetooth"
+                        app:iconGravity="textStart"
+                        android:text="@string/action_usb" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
         </FrameLayout>

@@ -47,6 +47,7 @@ class MainActivity : AppCompatActivity() {
 
         startButton.setOnClickListener { startAdvertising() }
         stopButton.setOnClickListener { stopAdvertising() }
+        findViewById<MaterialButton>(R.id.usbButton).setOnClickListener { startUsbReceive() }
 
         maybeRequestNotificationPermission()
     }
@@ -123,6 +124,13 @@ class MainActivity : AppCompatActivity() {
 
     private fun stopAdvertising() {
         stopService(Intent(this, AdvertiseService::class.java))
+    }
+
+    /** USB(adb)受信モードで MirrorActivity を開く（Mac ヘルパー稼働＋ケーブル接続が前提）。 */
+    private fun startUsbReceive() {
+        val intent = Intent(this, MirrorActivity::class.java)
+            .putExtra(MirrorActivity.EXTRA_USB, true)
+        startActivity(intent)
     }
 
     /** Android 13+ では FGS の常駐通知表示に POST_NOTIFICATIONS の実行時許可が要る。 */

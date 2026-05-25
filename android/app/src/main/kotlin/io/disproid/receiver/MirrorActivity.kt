@@ -36,12 +36,17 @@ class MirrorActivity : Activity(), SurfaceHolder.Callback {
     private val uiHandler = Handler(Looper.getMainLooper())
     private val hideControlsRunnable = Runnable { hideControls() }
 
+    /** true: USB(adb) 受信モード / false: AirPlay 受信モード */
+    private var usbMode = false
+    private var usbReceiver: UsbVideoReceiver? = null
+
     @Volatile private var videoW = 1920
     @Volatile private var videoH = 1080
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        usbMode = intent.getBooleanExtra(EXTRA_USB, false)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
         root = FrameLayout(this).apply { setBackgroundColor(Color.BLACK) }
@@ -88,24 +93,38 @@ class MirrorActivity : Activity(), SurfaceHolder.Callback {
         hideSystemUi()
 
         // 初期サイズ（既知のソース解像度）でアスペクト適用
-        videoW = NativeBridge.sourceWidth
-        videoH = NativeBridge.sourceHeight
+        if (!usbMode) {
+            videoW = NativeBridge.sourceWidth
+            videoH = NativeBridge.sourceHeight
+        }
         root.post { applyAspect() }
 
-        // 映像サイズ通知でアスペクト比を更新
-        NativeBridge.videoSizeListener = { w, h ->
-            if (w > 0 && h > 0 && (w != videoW || h != videoH)) {
+        if (!usbMode) {
+            // AirPlay: 映像サイズ通知でアスペクト比を更新
+            NativeBridge.videoSizeListener = { w, h ->
+                if (w > 0 && h > 0 && (w != videoW || h != videoH)) {
+                    videoW = w
+                    videoH = h
+                    applyAspect()
+                }
+            }
+            // ミラー終了(Mac 切断)で自動的に閉じ、MainActivity に戻る
+            NativeBridge.mirrorUiListener = { running ->
+                if (!running && !isFinishing) {
+                    Log.i(TAG, "ミラー終了を検知 → MirrorActivity を閉じる")
+                    finish()
+                }
+            }
+        }
+    }
+
+    /** USB 受信時の映像サイズ通知でアスペクト比を更新（メインスレッドへ）。 */
+    private fun onUsbFormat(w: Int, h: Int) {
+        runOnUiThread {
+            if (w > 0 && h > 0) {
                 videoW = w
                 videoH = h
                 applyAspect()
-            }
-        }
-
-        // ミラー終了(Mac 切断)で自動的に閉じ、MainActivity に戻る
-        NativeBridge.mirrorUiListener = { running ->
-            if (!running && !isFinishing) {
-                Log.i(TAG, "ミラー終了を検知 → MirrorActivity を閉じる")
-                finish()
             }
         }
     }
@@ -192,7 +211,11 @@ class MirrorActivity : Activity(), SurfaceHolder.Callback {
     /** ミラーリングを停止して画面を閉じる。 */
     private fun stopCasting() {
         Log.i(TAG, "ユーザー操作でミラーリング停止")
-        stopService(Intent(this, AdvertiseService::class.java))
+        if (usbMode) {
+            usbReceiver?.stop()
+        } else {
+            stopService(Intent(this, AdvertiseService::class.java))
+        }
         finish()
     }
 
@@ -226,10 +249,28 @@ class MirrorActivity : Activity(), SurfaceHolder.Callback {
     }
 
     override fun surfaceCreated(holder: SurfaceHolder) {
-        Log.i(TAG, "Surface 準備完了。描画先を登録")
+        Log.i(TAG, "Surface 準備完了。描画先を登録 (usbMode=$usbMode)")
         decoder.onVideoFormat(videoW, videoH)
         decoder.setSurface(holder.surface)
-        NativeBridge.frameSink = decoder
+        if (usbMode) {
+            // USB: localhost に接続して受信開始。フレームはデコーダへ直接流す。
+            val receiver = UsbVideoReceiver(
+                sink = decoder,
+                onFormat = { w, h -> onUsbFormat(w, h) },
+                onError = { msg ->
+                    runOnUiThread {
+                        if (!isFinishing) {
+                            android.widget.Toast.makeText(this, "USB 接続失敗: $msg", android.widget.Toast.LENGTH_LONG).show()
+                            finish()
+                        }
+                    }
+                }
+            )
+            usbReceiver = receiver
+            receiver.start()
+        } else {
+            NativeBridge.frameSink = decoder
+        }
     }
 
     override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
@@ -238,12 +279,16 @@ class MirrorActivity : Activity(), SurfaceHolder.Callback {
 
     override fun surfaceDestroyed(holder: SurfaceHolder) {
         Log.i(TAG, "Surface 破棄。描画先を解除")
+        usbReceiver?.stop()
+        usbReceiver = null
         NativeBridge.frameSink = null
         decoder.setSurface(null)
     }
 
     override fun onDestroy() {
         uiHandler.removeCallbacks(hideControlsRunnable)
+        usbReceiver?.stop()
+        usbReceiver = null
         decoder.onFirstFrame = null
         NativeBridge.mirrorUiListener = null
         NativeBridge.videoSizeListener = null
@@ -277,5 +322,7 @@ class MirrorActivity : Activity(), SurfaceHolder.Callback {
 
     companion object {
         private const val TAG = "DisproidReceiver"
+        /** USB(adb) 受信モードで起動する Intent extra。 */
+        const val EXTRA_USB = "io.disproid.receiver.USB_MODE"
     }
 }
