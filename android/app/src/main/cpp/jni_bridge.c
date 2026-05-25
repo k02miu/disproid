@@ -267,6 +267,10 @@ Java_io_disproid_receiver_NativeAirPlay_nativeStart(JNIEnv *env, jobject thiz,
         goto cleanup_strings;
     }
 
+    /* ディスプレイ報告の maxFPS を 60 に上げる（既定 30 が macOS の送出上限になっていた）。
+     * /info 応答の displays[].maxFPS として報告される。要検証: 実機で 60fps 送出になるか。 */
+    raop_set_plist(g_raop, "maxFPS", 60);
+
     int err = 0;
     g_dnssd = dnssd_init(name, (int) strlen(name), (const char *) hw_addr, 6, &err, 0);
     if (!g_dnssd || err) {

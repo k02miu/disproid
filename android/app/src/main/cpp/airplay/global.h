@@ -18,7 +18,7 @@
 #ifndef GLOBAL_H
 #define GLOBAL_H
 
-#define GLOBAL_MODEL    "AppleTV3,2"
+#define GLOBAL_MODEL    "AppleTV5,3"  /* 実験: 60fps を狙いモデル昇格(元 AppleTV3,2)。HEVC 切替に注意 */
 #define GLOBAL_VERSION  "220.68"
 
 /* use old protocol for audio AES key if client's User-Agent string is contained in these strings */

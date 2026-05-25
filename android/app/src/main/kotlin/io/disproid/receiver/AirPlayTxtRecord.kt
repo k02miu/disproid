@@ -15,8 +15,9 @@ object AirPlayTxtRecord {
     /** AirPlay サービスタイプ。NsdManager にはこの形で渡す。 */
     const val SERVICE_TYPE = "_airplay._tcp"
 
-    /** 核となるモデル文字列。これにより macOS は Apple TV 種別として扱う（UxPlay GLOBAL_MODEL）。 */
-    const val MODEL = "AppleTV3,2"
+    /** 核となるモデル文字列。これにより macOS は Apple TV 種別として扱う。
+     *  実験: 60fps を狙い AppleTV5,3(第4世代) に昇格（元 AppleTV3,2）。ネイティブ global.h と一致させる。 */
+    const val MODEL = "AppleTV5,3"
 
     /**
      * features ビットマスク（lo,hi の 2 ワード）。
