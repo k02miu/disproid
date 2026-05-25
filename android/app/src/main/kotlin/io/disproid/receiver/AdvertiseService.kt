@@ -3,6 +3,7 @@ package io.disproid.receiver
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
@@ -56,6 +57,12 @@ class AdvertiseService : Service() {
             val pk = NativeAirPlay.nativeGetPublicKey()
             Log.i(TAG, "ネイティブ raop 起動 port=$port pk=$pk")
 
+            // 映像フレームの受け取り先を登録し、ミラー開始時に全画面 Activity を起動する
+            NativeAirPlay.nativeSetVideoSink(NativeBridge)
+            NativeBridge.mirrorListener = { running ->
+                if (running) launchMirror()
+            }
+
             registerService(port, identity, pk)
         } catch (e: Throwable) {
             Log.e(TAG, "起動に失敗", e)
@@ -82,11 +89,25 @@ class AdvertiseService : Service() {
     private fun stopNative() {
         if (nativeStarted) {
             try {
+                NativeBridge.mirrorListener = null
+                NativeAirPlay.nativeSetVideoSink(null)
                 NativeAirPlay.nativeStop()
             } catch (e: Throwable) {
                 Log.w(TAG, "nativeStop 失敗", e)
             }
             nativeStarted = false
+        }
+    }
+
+    /** ミラー開始時に全画面 MirrorActivity を起動する（ベストエフォート）。
+     *  バックグラウンド起動が制限される場合は、通知タップ（contentIntent）で開ける。 */
+    private fun launchMirror() {
+        try {
+            val intent = Intent(this, MirrorActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            startActivity(intent)
+        } catch (e: Throwable) {
+            Log.w(TAG, "MirrorActivity 自動起動に失敗（通知から開いてください）", e)
         }
     }
 
@@ -159,10 +180,19 @@ class AdvertiseService : Service() {
             nm.createNotificationChannel(channel)
         }
 
+        // 通知タップで全画面ミラーを開ける（自動起動が制限された場合のフォールバック）
+        val openMirror = PendingIntent.getActivity(
+            this, 0,
+            Intent(this, MirrorActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP),
+            PendingIntent.FLAG_IMMUTABLE
+        )
+
         val notification: Notification = Notification.Builder(this, CHANNEL_ID)
             .setContentTitle("Disproid Receiver")
-            .setContentText("Apple TV として公開中")
+            .setContentText("Apple TV として公開中（タップでミラー表示）")
             .setSmallIcon(android.R.drawable.stat_sys_data_bluetooth)
+            .setContentIntent(openMirror)
             .setOngoing(true)
             .build()
 

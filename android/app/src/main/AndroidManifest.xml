@@ -32,6 +32,14 @@
             </intent-filter>
         </activity>
 
+        <!-- ミラーリング映像の全画面表示。Mac の画面は横向き想定。 -->
+        <activity
+            android:name=".MirrorActivity"
+            android:exported="false"
+            android:screenOrientation="sensorLandscape"
+            android:configChanges="orientation|screenSize|keyboardHidden"
+            android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen" />
+
         <service
             android:name=".AdvertiseService"
             android:exported="false"
