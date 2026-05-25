@@ -1,117 +1,116 @@
-# disproid
+# Disproid — Android タブレットを Mac のワイヤレス拡張ディスプレイにする
 
-macOS の非公開 API `CGVirtualDisplay`（CoreGraphics）を使って、**仮想ディスプレイを 1 枚生成する CLI ツール**。
+Android タブレットを、Mac の **ワイヤレス拡張ディスプレイ（またはミラー）** として使うためのアプリです。
 
-生成された仮想ディスプレイは System Settings > Displays に追加ディスプレイとして現れ、実ディスプレイと同様にウィンドウをドラッグして移動できる。仮想ディスプレイはプロセス生存中のみ存在し、`Ctrl-C` で破棄してクリーンに終了する。
+仕組みはシンプルで、Android アプリが自分を **Apple TV として LAN に広告**します。すると Mac は標準の
+**AirPlay 画面ミラーリング**の一覧にこのタブレットを表示し、選ぶと画面を飛ばせます。Mac 側でミラーリングの
+「**別のディスプレイとして使用**」を選べば、拡張ディスプレイとして使えます。
 
-> このリポジトリは「Android タブレットを Mac の拡張ディスプレイにする」構想のうち **macOS 側ヘルパーの仮想ディスプレイ生成部分のみ** を担当する。
-> 仮想ディスプレイを macOS 標準の AirPlay ミラーリングで Android 受信機へ送ることで、ユーザー体験上は拡張ディスプレイになる、という設計。
-> AirPlay プロトコルやキャプチャ/エンコード/ネットワークはこのリポジトリの範囲外。
+> **Mac 側に追加ソフトのインストールは不要**です。macOS 標準の AirPlay 機能だけを使います。
 
-## 動作環境
+- 映像: H.264 / H.265（解像度に応じて自動）、最大 60fps
+- 音声: 現在未対応（映像のみ）
+- 検証環境: Mac (macOS 26 / Apple Silicon) ＋ Lenovo Yoga Pad Pro (Android 13)
 
-- macOS（Apple Silicon 前提）。**開発・検証は macOS 26.1 / arm64 で実施**。
-- Swift 6.x（Swift toolchain は Xcode または Command Line Tools 付属のもの）
-- 外部依存ゼロ。システムフレームワーク（CoreGraphics / Foundation）のみ。
+---
 
-> ⚠️ `CGVirtualDisplay` / `CGVirtualDisplayDescriptor` / `CGVirtualDisplayMode` / `CGVirtualDisplaySettings` は
-> **公開 SDK に存在しない非公開 API**。本ツールは `Sources/CGVirtualDisplayInterface/include/CGVirtualDisplayInterface.h`
-> で Objective-C インターフェースを自前宣言している。これらのシグネチャは実機の Objective-C ランタイムを
-> introspection して再現したものだが、macOS のバージョンによっては差異がありうる。ヘッダ内の「要検証」コメントを参照。
+## 必要なもの
 
-## ビルド
+- **Mac**（macOS、AirPlay 対応。標準機能のみ）
+- **Android タブレット**（Android 8.0 / API 26 以上、arm64）
+- **Mac とタブレットが同じ Wi-Fi（同一サブネット）にあること**
 
-```bash
-swift build
-```
+---
 
-リリースビルド:
+## セットアップ（タブレットへのインストール）
 
-```bash
-swift build -c release
-```
-
-## 実行
+ビルド済み APK をインストールします（ビルド方法は [`android/README.md`](android/README.md) 参照）。
 
 ```bash
-# デフォルト: 1920x1080 @ 60Hz
-swift run disproid
-
-# 解像度・リフレッシュレートを指定
-swift run disproid --width 1920 --height 1080 --refresh 60
-
-# HiDPI(Retina) として登録（見かけ 1920x1080 / バッキング 3840x2160）
-swift run disproid --width 3840 --height 2160 --hidpi
-
-# ビルド済みバイナリを直接実行
-.build/debug/disproid --name "My Virtual Display"
+# USB デバッグを有効にしたタブレットを接続
+adb install -r android/app/build/outputs/apk/debug/app-debug.apk
 ```
 
-### オプション
+インストールすると、アプリ一覧に **Disproid Receiver** が追加されます。
 
-| オプション | 説明 | デフォルト |
-| --- | --- | --- |
-| `--width W` | モードのピクセル幅 | `1920` |
-| `--height H` | モードのピクセル高さ | `1080` |
-| `--refresh HZ` | リフレッシュレート (Hz) | `60` |
-| `--hidpi` | HiDPI(Retina) として登録。macOS は「見かけ上 幅/2 × 高さ/2」のスケール解像度を提供する | off |
-| `--name NAME` | ディスプレイ名 | `Disproid Virtual Display` |
-| `-h`, `--help` | ヘルプ表示 | |
+---
 
-> AirPlay 受信は Apple TV 以外だと約 1080p が上限のため、デフォルトを 1920x1080 @ 60Hz にしている。
+## Mac 側の前準備
 
-起動後はプロセスが常駐する。終了するには `Ctrl-C`（SIGINT）を押す。仮想ディスプレイが破棄され、クリーンに終了する。
+特別なインストールは不要です。以下だけ確認してください。
 
-## 動作確認手順
+1. **同じ Wi-Fi に接続**: Mac とタブレットを同一のネットワーク（同一サブネット）に接続する。
+   - 社内ネットや公衆 Wi-Fi で「**AP 分離 / プライバシーセパレータ**」が有効だと、端末同士が通信できず一覧に出ません。自宅やテザリング等、クライアント間通信が許可された Wi-Fi を使ってください。
+2. **AirPlay が有効**であること（macOS は通常デフォルトで有効）。
 
-1. ツールを起動する。
-   ```bash
-   swift run disproid
-   ```
-   `displayID` が表示されれば生成成功。
+---
 
-2. **System Settings > Displays** を開く。追加のディスプレイが表示され、配置（Arrangement）でドラッグして位置を変更できることを確認する。
+## 使い方
 
-3. 任意のウィンドウを仮想ディスプレイ側へドラッグして移動できることを確認する（実ディスプレイ同様に扱える）。
+### 1. タブレット側：公開を開始
 
-4. CLI からオンラインディスプレイ一覧でも確認できる。別ターミナルで:
-   ```bash
-   cat > /tmp/listdisp.swift <<'EOF'
-   import CoreGraphics
-   var count: UInt32 = 0
-   CGGetOnlineDisplayList(0, nil, &count)
-   var ids = [CGDirectDisplayID](repeating: 0, count: Int(count))
-   CGGetOnlineDisplayList(count, &ids, &count)
-   for id in ids {
-       print("id=\(id) \(CGDisplayPixelsWide(id))x\(CGDisplayPixelsHigh(id)) builtin=\(CGDisplayIsBuiltin(id) != 0)")
-   }
-   EOF
-   swift /tmp/listdisp.swift
-   ```
-   `builtin=false` の新しいディスプレイが一覧に増えていれば成功。
+1. **Disproid Receiver** を起動する。
+2. （初回）通知の許可を求められたら **許可**する。
+3. 必要なら **解像度**を選ぶ（既定は「自動（タブレットに最適）」）。
+4. **「公開を開始」** をタップする。状態が「公開中…」になれば準備完了。
 
-5. `Ctrl-C` で終了し、Displays 設定および上記一覧から仮想ディスプレイが消えることを確認する。
+### 2. Mac 側：画面ミラーリングで選ぶ
 
-## 構成
+1. メニューバー右上の **コントロールセンター** を開く。
+2. **画面ミラーリング** を選ぶ。
+3. 一覧に出てくる **Disproid Receiver** を選ぶ。
+4. 接続が始まり、タブレットに Mac の画面が表示されます（最初の数秒は「接続を待っています…」表示）。
+
+### 3. 拡張ディスプレイにする（任意）
+
+- 画面ミラーリングのメニューで **「別のディスプレイとして使用」** を選ぶと、ミラーではなく
+  **拡張ディスプレイ**になります（Mac の「システム設定 > ディスプレイ」で配置を調整できます）。
+- ミラー（複製）として使いたい場合はそのままでOKです。
+
+### 4. 停止する
+
+いずれかの方法で停止できます。
+
+- **タブレットの画面をタップ** → 表示される **「停止」** を押す（オーバーレイ外をタップ／数秒放置で消えます）。
+- 通知シェードの **Disproid Receiver 通知の「停止」**。
+- アプリ画面の **「停止」** ボタン。
+- Mac 側でミラーリングを解除する。
+
+---
+
+## うまくいかないとき
+
+| 症状 | 確認・対処 |
+|---|---|
+| Mac の画面ミラーリング一覧に出ない | Mac とタブレットが**同一 Wi-Fi / 同一サブネット**か。Wi-Fi の **AP 分離**が無効か。タブレットで「公開を開始」済みか。 |
+| 選んでも映らない／真っ黒 | いったん停止→再度「公開を開始」→選び直す。解像度を「自動」または「1920×1080」に。 |
+| カクつく・遅延が大きい | 解像度を下げる（例: 1280×720）。Wi-Fi の電波状況を確認（5GHz 推奨）。 |
+| 音が出ない | 仕様です（現在 音声は未対応、映像のみ）。 |
+
+ログで詳しく見たい場合（開発者向け）:
+
+```bash
+adb logcat -s DisproidNative DisproidReceiver
+```
+
+---
+
+## リポジトリ構成
 
 ```
-Package.swift
-Sources/
-  CGVirtualDisplayInterface/        # 非公開 API の ObjC インターフェース宣言（ヘッダのみ）
-    include/
-      CGVirtualDisplayInterface.h
-      module.modulemap
-    shim.m                          # ヘッダが ObjC としてコンパイル可能かの検証用
-  disproid/                         # Swift 実行ターゲット
-    main.swift                      # エントリ・引数処理・SIGINT・常駐
-    Options.swift                   # CLI 引数パーサ
-    VirtualDisplay.swift            # CGVirtualDisplay ラッパー
+android/                 Android 受信アプリ（本体）。ビルド/開発は android/README.md
+  app/src/main/kotlin/   UI・mDNS公開・JNI
+  app/src/main/cpp/      UxPlay 由来のネイティブ AirPlay コア（JNI）
+disproid.png             アプリアイコン素材
+Package.swift / Sources/ 初期に試した macOS 仮想ディスプレイ CLI（CGVirtualDisplay）。
+                         現在の方式（Android 単体 + 標準 AirPlay）では使用しません。
 ```
 
-## スコープ外
+> 当初は「macOS 側で仮想ディスプレイを作って AirPlay で送る」案（`Sources/` の Swift CLI）でしたが、
+> 「Android を Apple TV として広告し macOS 標準の AirPlay で拡張表示する」方式に切り替えたため、
+> 現在の本体は `android/` です。
 
-- AirPlay プロトコルの実装
-- 画面キャプチャ / エンコード / ネットワーク送信 / ScreenCaptureKit
-- Android 受信機アプリ
+## ライセンス注意
 
-ミラーリングは macOS 標準の AirPlay 機能に任せる設計のため、本ツールは仮想ディスプレイの生成のみを行う。
+ネイティブコアは [UxPlay](https://github.com/FDH2/UxPlay)（**GPLv3**）を移植しています。配布物は GPLv3 の
+制約（ソース公開義務等）を受けます。詳細は [`android/README.md`](android/README.md) を参照してください。
