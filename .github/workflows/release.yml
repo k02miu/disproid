@@ -1,4 +1,4 @@
-name: Build & Release APK
+name: Build & Release
 
 on:
   push:
@@ -10,7 +10,7 @@ permissions:
   contents: write   # Release 作成に必要
 
 jobs:
-  build:
+  build-android:
     runs-on: ubuntu-latest
     env:
       NDK_VERSION: "27.2.12479018"
@@ -55,9 +55,36 @@ jobs:
           name: disproid-receiver-apk
           path: dist/*.apk
 
-      - name: Create GitHub Release
+      - name: Create GitHub Release (APK)
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
           files: dist/*.apk
           generate_release_notes: true
+
+  build-mac:
+    needs: build-android   # Release 作成後に .app を添付（レース回避）
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build .app bundle
+        working-directory: mac
+        run: bash make-app.sh
+
+      - name: Zip .app
+        working-directory: mac
+        run: ditto -c -k --keepParent "Disproid Helper.app" "disproid-helper-${GITHUB_REF_NAME}.zip"
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: disproid-helper-mac
+          path: mac/*.zip
+
+      - name: Attach .app to Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: mac/*.zip
