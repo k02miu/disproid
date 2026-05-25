@@ -69,6 +69,9 @@ class UsbVideoReceiver(
 
             val buf = ByteArray(1 shl 20) // 1MB 初期
             var work = buf
+            var statFrames = 0
+            var statBytes = 0L
+            var statT0 = System.currentTimeMillis()
             while (running) {
                 val len = input.readInt() // アクセスユニット長(BE)
                 if (len <= 0) continue
@@ -76,6 +79,13 @@ class UsbVideoReceiver(
                 input.readFully(work, 0, len)
                 sink.onVideoFrame(ByteBuffer.wrap(work, 0, len), len, ptsUs)
                 ptsUs += 16_666 // 約60fps 相当の擬似 pts
+
+                statFrames++; statBytes += len
+                val now = System.currentTimeMillis()
+                if (now - statT0 >= 1000) {
+                    Log.i(TAG, "USB rx: ${statFrames} frames/s, ${statBytes / 1024} KB/s")
+                    statFrames = 0; statBytes = 0; statT0 = now
+                }
             }
         } catch (e: Exception) {
             if (running) {

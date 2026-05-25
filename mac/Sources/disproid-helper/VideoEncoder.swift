@@ -33,13 +33,17 @@ final class VideoEncoder {
     }
 
     func start() throws {
+        // 低遅延レート制御を有効化（macOS 11.3+）。エンコーダの溜め込みを抑える。
+        let spec: [CFString: Any] = [
+            kVTVideoEncoderSpecification_EnableLowLatencyRateControl: kCFBooleanTrue as Any
+        ]
         var session: VTCompressionSession?
         let status = VTCompressionSessionCreate(
             allocator: kCFAllocatorDefault,
             width: width,
             height: height,
             codecType: codec.vtCodecType,
-            encoderSpecification: nil,
+            encoderSpecification: spec as CFDictionary,
             imageBufferAttributes: nil,
             compressedDataAllocator: nil,
             outputCallback: nil,
@@ -55,6 +59,8 @@ final class VideoEncoder {
         // 低遅延・リアルタイム設定
         VTSessionSetProperty(session, key: kVTCompressionPropertyKey_RealTime, value: kCFBooleanTrue)
         VTSessionSetProperty(session, key: kVTCompressionPropertyKey_AllowFrameReordering, value: kCFBooleanFalse)
+        // フレームを溜めない（出力遅延 0）
+        VTSessionSetProperty(session, key: kVTCompressionPropertyKey_MaxFrameDelayCount, value: 0 as CFNumber)
         VTSessionSetProperty(session, key: kVTCompressionPropertyKey_MaxKeyFrameInterval, value: 60 as CFNumber)
         VTSessionSetProperty(session, key: kVTCompressionPropertyKey_ExpectedFrameRate, value: 60 as CFNumber)
         // 適度なビットレート（拡張ディスプレイ用途。要調整）

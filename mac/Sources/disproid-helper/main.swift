@@ -51,8 +51,23 @@ AdbBridge.reverse(devicePort: DEVICE_PORT, hostPort: HOST_PORT)
 
 // MARK: - エンコーダ
 
+// 統計
+var statCaptured = 0
+var statSkipped = 0
+var statEncoded = 0
+var statBytes = 0
+let statTimer = DispatchSource.makeTimerSource(queue: .global())
+statTimer.schedule(deadline: .now() + 1, repeating: 1)
+statTimer.setEventHandler {
+    FileHandle.standardError.write(Data("[stat] captured=\(statCaptured) skipped=\(statSkipped) encoded=\(statEncoded) (\(statBytes/1024)KB)/s\n".utf8))
+    statCaptured = 0; statSkipped = 0; statEncoded = 0; statBytes = 0
+}
+statTimer.resume()
+
 let encoder = VideoEncoder(width: width, height: height, codec: isH265 ? .h265 : .h264)
 encoder.onEncoded = { data, _ in
+    statEncoded += 1
+    statBytes += data.count
     server.sendAccessUnit(data)
 }
 do {
@@ -66,6 +81,14 @@ do {
 
 let capturer = ScreenCapturer(displayID: virtualDisplay.displayID, width: width, height: height, fps: Int(options.refreshRate))
 capturer.onFrame = { imageBuffer, pts in
+    statCaptured += 1
+    // 送信が詰まっている（受信側が遅れている）間は、このフレームをエンコードせず捨てる。
+    // エンコード"前"の間引きなので圧縮ストリームは壊れず（実効fpsが下がるだけ）、
+    // 遅延の累積と固まりを防ぐ。
+    if server.isBacklogged {
+        statSkipped += 1
+        return
+    }
     encoder.encode(imageBuffer, pts: pts)
 }
 Task {

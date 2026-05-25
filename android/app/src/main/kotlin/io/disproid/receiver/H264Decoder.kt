@@ -44,6 +44,10 @@ class H264Decoder : VideoSink {
     @Volatile var onFirstFrame: (() -> Unit)? = null
     @Volatile private var firstFrameDone = false
 
+    // 統計（1秒ごとにログ）
+    private var statFed = 0
+    private var statRendered = 0
+
     // ---- VideoSink（ネイティブスレッドから） ----
 
     override fun onVideoFormat(width: Int, height: Int) {
@@ -56,15 +60,20 @@ class H264Decoder : VideoSink {
 
     override fun onVideoFrame(buffer: ByteBuffer, len: Int, ptsUs: Long) {
         if (!running || len <= 0) return
-        // ネイティブバッファは呼び出し中のみ有効 → コピーしてキューへ。即 return。
+        // バッファはこの呼び出し中のみ有効 → コピーしてキューへ。
         val arr = obtain(len)
         buffer.position(0)
         buffer.limit(len)
         buffer.get(arr, 0, len)
         val frame = Frame(arr, len, ptsUs)
-        if (!queue.offer(frame)) {
-            queue.poll()?.let { recycle(it.data) }  // 滞留時は最古を捨てて遅延を抑える
-            if (!queue.offer(frame)) recycle(arr)
+        // P フレームを途中で捨てると参照が壊れて固まるため、ドロップせずブロッキングで詰める。
+        // キューが満杯なら呼び出し元(受信スレッド)が待つ＝バックプレッシャー。
+        // 送信側(Mac)はこの詰まりを検知してエンコード前に間引く。
+        try {
+            queue.put(frame)
+        } catch (e: InterruptedException) {
+            recycle(arr)
+            Thread.currentThread().interrupt()
         }
     }
 
@@ -112,8 +121,14 @@ class H264Decoder : VideoSink {
 
     private fun loop() {
         var codec: MediaCodec? = null
+        var statT0 = System.currentTimeMillis()
         try {
             while (running) {
+                val now = System.currentTimeMillis()
+                if (now - statT0 >= 1000) {
+                    Log.i(TAG, "decode: fed=$statFed rendered=$statRendered /s (queue=${queue.size})")
+                    statFed = 0; statRendered = 0; statT0 = now
+                }
                 val s = surface ?: run { Thread.sleep(5); null } ?: continue
 
                 if (codec == null || pendingReconfigure) {
@@ -159,6 +174,7 @@ class H264Decoder : VideoSink {
         if (f.len <= ib.remaining()) {
             ib.put(f.data, 0, f.len)
             c.queueInputBuffer(inIdx, 0, f.len, f.ptsUs, 0)
+            statFed++
         } else {
             Log.w(TAG, "フレーム超過: ${f.len} > ${ib.remaining()}")
             c.queueInputBuffer(inIdx, 0, 0, f.ptsUs, 0)
@@ -170,6 +186,7 @@ class H264Decoder : VideoSink {
         var idx = c.dequeueOutputBuffer(info, 0)
         while (idx >= 0) {
             c.releaseOutputBuffer(idx, true) // render=true で Surface へ即描画
+            statRendered++
             if (!firstFrameDone) {
                 firstFrameDone = true
                 onFirstFrame?.invoke()
@@ -229,6 +246,6 @@ class H264Decoder : VideoSink {
 
     companion object {
         private const val TAG = "DisproidReceiver"
-        private const val QUEUE_CAP = 6
+        private const val QUEUE_CAP = 3  // 浅め＝低遅延。溢れたらブロックしてバックプレッシャー(ドロップしない)
     }
 }

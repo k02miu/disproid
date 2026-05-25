@@ -17,6 +17,17 @@ final class FrameServer {
     private var listener: NWListener?
     private var connection: NWConnection?
 
+    // 送信バックログ（未完了の送信数）。詰まっている間は送信側で間引く判断に使う。
+    private let lock = NSLock()
+    private var inFlight = 0
+    private let maxInFlight = 2
+
+    /// 送信が詰まっている（= 受信側が遅れている）か。true の間はエンコードをスキップして良い。
+    var isBacklogged: Bool {
+        lock.lock(); defer { lock.unlock() }
+        return inFlight >= maxInFlight
+    }
+
     init(port: UInt16, isH265: Bool, width: Int, height: Int) {
         self.port = port
         self.codecByte = isH265 ? 1 : 0
@@ -25,7 +36,10 @@ final class FrameServer {
     }
 
     func start() throws {
-        let params = NWParameters.tcp
+        // Nagle 無効（低遅延）
+        let tcpOptions = NWProtocolTCP.Options()
+        tcpOptions.noDelay = true
+        let params = NWParameters(tls: nil, tcp: tcpOptions)
         params.allowLocalEndpointReuse = true
         let listener = try NWListener(using: params, on: NWEndpoint.Port(rawValue: port)!)
         listener.newConnectionHandler = { [weak self] conn in
@@ -40,6 +54,7 @@ final class FrameServer {
         // 単一クライアント前提。既存接続は破棄して差し替え。
         connection?.cancel()
         connection = conn
+        lock.lock(); inFlight = 0; lock.unlock()
         conn.stateUpdateHandler = { state in
             if case .ready = state {
                 FileHandle.standardError.write(Data("[server] client connected\n".utf8))
@@ -65,7 +80,11 @@ final class FrameServer {
         var framed = Data()
         framed.append(beUInt32(UInt32(data.count)))
         framed.append(data)
-        conn.send(content: framed, completion: .contentProcessed { _ in })
+        lock.lock(); inFlight += 1; lock.unlock()
+        conn.send(content: framed, completion: .contentProcessed { [weak self] _ in
+            guard let self = self else { return }
+            self.lock.lock(); self.inFlight -= 1; self.lock.unlock()
+        })
     }
 
     func stop() {
