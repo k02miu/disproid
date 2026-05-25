@@ -28,6 +28,7 @@ struct ControlView: View {
         ("1920 × 1200", 1920, 1200),
         ("2560 × 1600", 2560, 1600),
     ]
+    private let bitrates = [5, 10, 20, 40, 60]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -56,6 +57,14 @@ struct ControlView: View {
                 }
             }
             .disabled(engine.isRunning)
+            .pickerStyle(.menu)
+
+            // ビットレート（稼働中でも変更可＝ライブ反映）
+            Picker("画質(ビットレート)", selection: $engine.bitrateMbps) {
+                ForEach(bitrates, id: \.self) { mbps in
+                    Text("\(mbps) Mbps").tag(mbps)
+                }
+            }
             .pickerStyle(.menu)
 
             // 開始/停止

@@ -18,6 +18,10 @@ final class StreamEngine: ObservableObject {
     @Published private(set) var statsText: String = ""
     @Published var width: Int = 1920
     @Published var height: Int = 1080
+    /// ビットレート(Mbps)。稼働中の変更もエンコーダへ即反映する。
+    @Published var bitrateMbps: Int = 20 {
+        didSet { encoder?.setBitrate(bitrateMbps * 1_000_000) }
+    }
 
     private let devicePort: UInt16 = 27184
     private let hostPort: UInt16 = 27184
@@ -75,7 +79,7 @@ final class StreamEngine: ObservableObject {
         AdbBridge.reverse(devicePort: devicePort, hostPort: hostPort)
 
         // エンコーダ
-        let enc = VideoEncoder(width: w, height: h, codec: isH265 ? .h265 : .h264)
+        let enc = VideoEncoder(width: w, height: h, codec: isH265 ? .h265 : .h264, bitrate: bitrateMbps * 1_000_000)
         enc.onEncoded = { [weak self] data, _ in
             self?.statEncoded += 1
             self?.statBytes += data.count

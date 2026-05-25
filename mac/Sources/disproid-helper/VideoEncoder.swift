@@ -26,10 +26,13 @@ final class VideoEncoder {
     /// Annex-B のアクセスユニット（NAL 列）を受け取るコールバック。
     var onEncoded: ((Data, _ isKeyframe: Bool) -> Void)?
 
-    init(width: Int, height: Int, codec: Codec) {
+    private var bitrate: Int
+
+    init(width: Int, height: Int, codec: Codec, bitrate: Int = 20_000_000) {
         self.width = Int32(width)
         self.height = Int32(height)
         self.codec = codec
+        self.bitrate = bitrate
     }
 
     func start() throws {
@@ -63,13 +66,28 @@ final class VideoEncoder {
         VTSessionSetProperty(session, key: kVTCompressionPropertyKey_MaxFrameDelayCount, value: 0 as CFNumber)
         VTSessionSetProperty(session, key: kVTCompressionPropertyKey_MaxKeyFrameInterval, value: 60 as CFNumber)
         VTSessionSetProperty(session, key: kVTCompressionPropertyKey_ExpectedFrameRate, value: 60 as CFNumber)
-        // 適度なビットレート（拡張ディスプレイ用途。要調整）
-        VTSessionSetProperty(session, key: kVTCompressionPropertyKey_AverageBitRate, value: 20_000_000 as CFNumber)
+        applyBitrate(session, bitrate)
         if codec == .h264 {
             VTSessionSetProperty(session, key: kVTCompressionPropertyKey_ProfileLevel,
                                  value: kVTProfileLevel_H264_High_AutoLevel)
         }
         VTCompressionSessionPrepareToEncodeFrames(session)
+    }
+
+    /// ビットレートを変更する（稼働中でも反映される）。
+    func setBitrate(_ bps: Int) {
+        bitrate = bps
+        if let session = session {
+            applyBitrate(session, bps)
+        }
+    }
+
+    private func applyBitrate(_ session: VTCompressionSession, _ bps: Int) {
+        VTSessionSetProperty(session, key: kVTCompressionPropertyKey_AverageBitRate, value: bps as CFNumber)
+        // 瞬間スパイクを抑えて遅延の暴れを防ぐ（1秒あたり平均の約1.5倍を上限）。
+        let bytesPerSec = bps / 8
+        let limits: [Any] = [(bytesPerSec * 3 / 2) as CFNumber, 1 as CFNumber]
+        VTSessionSetProperty(session, key: kVTCompressionPropertyKey_DataRateLimits, value: limits as CFArray)
     }
 
     func encode(_ imageBuffer: CVImageBuffer, pts: CMTime) {
