@@ -22,9 +22,10 @@ object AirPlayTxtRecord {
     /**
      * features ビットマスク（lo,hi の 2 ワード）。
      * ネイティブコアの dnssdint.h FEATURES_1/_2 と一致させる（bit27=legacy pairing ON）。
-     * これにより mDNS 広告と GET /info の features が一致する。要検証: 拡張表示に必須のビット構成。
+     * 高位ワードの bit10(=全体の bit42, SupportsScreenMultiCodec)を立てて H.265 受信に対応（0x400）。
+     * これにより 16:10 等の非標準解像度で macOS が送る HEVC を受けられる。
      */
-    const val FEATURES = "0x5A7FFEE6,0x0"
+    const val FEATURES = "0x5A7FFEE6,0x400"
 
     /** AirPlay ソースバージョン（UxPlay GLOBAL_VERSION）。要検証: 拡張が legacy srcvers=220.68 で通るか。 */
     const val SRCVERS = "220.68"

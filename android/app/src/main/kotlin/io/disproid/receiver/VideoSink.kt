@@ -16,4 +16,7 @@ interface VideoSink {
 
     /** ミラーリングの開始/終了。 */
     fun onMirrorState(running: Boolean)
+
+    /** コーデック通知（true=H.265/HEVC, false=H.264）。フレーム到着前に呼ばれる。 */
+    fun onVideoCodec(isH265: Boolean)
 }

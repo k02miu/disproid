@@ -25,6 +25,9 @@ object NativeBridge : VideoSink {
     /** ミラー状態リスナ（MirrorActivity が登録：終了で自分を閉じる）。メインスレッドで呼ぶ。 */
     @Volatile var mirrorUiListener: ((Boolean) -> Unit)? = null
 
+    /** 映像サイズ通知（MirrorActivity が登録：SurfaceView をアスペクト比に合わせる）。メインスレッドで呼ぶ。 */
+    @Volatile var videoSizeListener: ((Int, Int) -> Unit)? = null
+
     @Volatile var sourceWidth: Int = 1920
         private set
     @Volatile var sourceHeight: Int = 1080
@@ -34,6 +37,7 @@ object NativeBridge : VideoSink {
         if (width > 0 && height > 0) {
             sourceWidth = width
             sourceHeight = height
+            mainHandler.post { videoSizeListener?.invoke(width, height) }
         }
         frameSink?.onVideoFormat(width, height)
     }
@@ -49,5 +53,9 @@ object NativeBridge : VideoSink {
             mirrorUiListener?.invoke(running)
         }
         frameSink?.onMirrorState(running)
+    }
+
+    override fun onVideoCodec(isH265: Boolean) {
+        frameSink?.onVideoCodec(isH265)
     }
 }

@@ -40,6 +40,7 @@ static jobject g_video_sink = NULL;       /* VideoSink のグローバル参照 
 static jmethodID g_mid_on_format = NULL;  /* onVideoFormat(II)V */
 static jmethodID g_mid_on_frame = NULL;   /* onVideoFrame(Ljava/nio/ByteBuffer;IJ)V */
 static jmethodID g_mid_on_mirror = NULL;  /* onMirrorState(Z)V */
+static jmethodID g_mid_on_codec = NULL;   /* onVideoCodec(Z)V  (true=H.265) */
 
 JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM *vm, void *reserved) {
     (void) reserved;
@@ -165,6 +166,14 @@ static void cb_export_dacp(void *cls, const char *ar, const char *id) { (void) c
 static int cb_video_set_codec(void *cls, video_codec_t codec) {
     (void) cls;
     LOGI("video_set_codec=%d (0=unknown,1=h264,2=h265)", codec);
+    if (g_video_sink && g_mid_on_codec) {
+        JNIEnv *env = get_env();
+        if (env) {
+            (*env)->CallVoidMethod(env, g_video_sink, g_mid_on_codec,
+                                   (jboolean) (codec == VIDEO_CODEC_H265));
+            if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+        }
+    }
     return 0;
 }
 /* HLS 動画プレイヤ制御（拡張ディスプレイ用途では未使用） */
@@ -268,9 +277,9 @@ Java_io_disproid_receiver_NativeAirPlay_nativeStart(JNIEnv *env, jobject thiz,
         goto cleanup_strings;
     }
 
-    /* 接続先タブレットの実ディスプレイ情報を /info の displays[] として報告し、
-     * macOS にタブレットのアスペクト比・解像度・リフレッシュレートで送らせる。
-     * width/height は landscape（長辺=width）で渡される前提。 */
+    /* 接続先タブレットのアスペクト比に合わせた解像度を /info の displays[] で報告。
+     * 注意: 生のパネル解像度(例 2160x1350)は AppleTV5,3 が受け付けず映像が止まるため、
+     * Kotlin 側で width=1920 基準の標準的な値に整えて渡す。要検証: 受理される解像度の範囲。 */
     if (width > 0 && height > 0) {
         raop_set_plist(g_raop, "width", width);
         raop_set_plist(g_raop, "height", height);
@@ -291,6 +300,10 @@ Java_io_disproid_receiver_NativeAirPlay_nativeStart(JNIEnv *env, jobject thiz,
         goto cleanup_strings;
     }
     raop_set_dnssd(g_raop, g_dnssd);          /* dnssd->pk = raop->pk_str */
+    /* features bit 42 = SupportsScreenMultiCodec。これを立てると macOS は
+     * 非標準解像度(16:10等)で H.265 を送ってくる。立てないと UxPlay が reset する。
+     * (UxPlay の -h265 オプション相当) */
+    dnssd_set_airplay_features(g_dnssd, 42, 1);
     dnssd_register_raop(g_dnssd, 0);          /* TXT バッファ構築（mDNS自体はKotlin） */
     dnssd_register_airplay(g_dnssd, 0);
 
@@ -329,6 +342,7 @@ Java_io_disproid_receiver_NativeAirPlay_nativeSetVideoSink(JNIEnv *env, jobject 
     g_mid_on_format = NULL;
     g_mid_on_frame = NULL;
     g_mid_on_mirror = NULL;
+    g_mid_on_codec = NULL;
 
     if (sink) {
         g_video_sink = (*env)->NewGlobalRef(env, sink);
@@ -336,6 +350,7 @@ Java_io_disproid_receiver_NativeAirPlay_nativeSetVideoSink(JNIEnv *env, jobject 
         g_mid_on_format = (*env)->GetMethodID(env, cls, "onVideoFormat", "(II)V");
         g_mid_on_frame = (*env)->GetMethodID(env, cls, "onVideoFrame", "(Ljava/nio/ByteBuffer;IJ)V");
         g_mid_on_mirror = (*env)->GetMethodID(env, cls, "onMirrorState", "(Z)V");
+        g_mid_on_codec = (*env)->GetMethodID(env, cls, "onVideoCodec", "(Z)V");
         (*env)->DeleteLocalRef(env, cls);
         LOGI("VideoSink 登録");
     } else {

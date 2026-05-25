@@ -36,6 +36,7 @@ class H264Decoder : VideoSink {
 
     @Volatile private var width = 1920
     @Volatile private var height = 1080
+    @Volatile private var isH265 = false
     @Volatile private var pendingReconfigure = false
     @Volatile private var needFlush = false
 
@@ -70,6 +71,14 @@ class H264Decoder : VideoSink {
         }
     }
 
+    override fun onVideoCodec(isH265: Boolean) {
+        if (this.isH265 != isH265) {
+            this.isH265 = isH265
+            pendingReconfigure = true  // MIME(avc/hevc)が変わるので再構成
+            Log.i(TAG, "コーデック: ${if (isH265) "H.265/HEVC" else "H.264/AVC"}")
+        }
+    }
+
     // ---- ライフサイクル（UI スレッド） ----
 
     fun setSurface(s: Surface?) {
@@ -99,7 +108,6 @@ class H264Decoder : VideoSink {
 
     private fun loop() {
         var codec: MediaCodec? = null
-        var sawKeyframe = false
         try {
             while (running) {
                 val s = surface ?: run { Thread.sleep(5); null } ?: continue
@@ -107,7 +115,6 @@ class H264Decoder : VideoSink {
                 if (codec == null || pendingReconfigure) {
                     codec?.let { safeRelease(it) }
                     pendingReconfigure = false
-                    sawKeyframe = false
                     codec = configure(s)
                     if (codec == null) { Thread.sleep(15); continue }
                 }
@@ -115,20 +122,17 @@ class H264Decoder : VideoSink {
 
                 if (needFlush) {
                     needFlush = false
-                    sawKeyframe = false
                     try { c.flush() } catch (_: IllegalStateException) {}
                 }
 
                 val frame = queue.poll(15, TimeUnit.MILLISECONDS)
                 if (frame != null) {
                     try {
-                        if (!sawKeyframe && containsSpsOrIdr(frame.data, frame.len)) {
-                            sawKeyframe = true
-                        }
-                        if (sawKeyframe) feed(c, frame)
+                        // 全フレームを投入する。デコーダは内部でキーフレームまで出力を待つ。
+                        feed(c, frame)
                     } catch (e: IllegalStateException) {
                         Log.e(TAG, "feed 失敗、再構成します", e)
-                        safeRelease(c); codec = null; sawKeyframe = false
+                        safeRelease(c); codec = null
                     } finally {
                         recycle(frame.data)
                     }
@@ -167,17 +171,18 @@ class H264Decoder : VideoSink {
     }
 
     private fun configure(s: Surface): MediaCodec? = try {
-        val fmt = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC, width, height)
+        val mime = if (isH265) MediaFormat.MIMETYPE_VIDEO_HEVC else MediaFormat.MIMETYPE_VIDEO_AVC
+        val fmt = MediaFormat.createVideoFormat(mime, width, height)
         fmt.setInteger(MediaFormat.KEY_FRAME_RATE, 60)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             fmt.setInteger(MediaFormat.KEY_LOW_LATENCY, 1) // 低遅延モード
         }
         // realtime 優先（0=最高優先）
         fmt.setInteger(MediaFormat.KEY_PRIORITY, 0)
-        val c = MediaCodec.createDecoderByType(MediaFormat.MIMETYPE_VIDEO_AVC)
+        val c = MediaCodec.createDecoderByType(mime)
         c.configure(fmt, s, null, 0)
         c.start()
-        Log.i(TAG, "MediaCodec 構成: ${width}x${height} lowLatency=${Build.VERSION.SDK_INT >= Build.VERSION_CODES.R}")
+        Log.i(TAG, "MediaCodec 構成: $mime ${width}x${height} lowLatency=${Build.VERSION.SDK_INT >= Build.VERSION_CODES.R}")
         c
     } catch (e: Exception) {
         Log.e(TAG, "MediaCodec 構成失敗", e)
@@ -187,27 +192,6 @@ class H264Decoder : VideoSink {
     private fun safeRelease(c: MediaCodec) {
         try { c.stop() } catch (_: Exception) {}
         try { c.release() } catch (_: Exception) {}
-    }
-
-    // ---- Annex-B から SPS(7)/IDR(5) NAL を検出 ----
-    private fun containsSpsOrIdr(d: ByteArray, len: Int): Boolean {
-        var i = 0
-        while (i + 3 < len) {
-            val b0 = d[i].toInt() and 0xFF
-            val b1 = d[i + 1].toInt() and 0xFF
-            val b2 = d[i + 2].toInt() and 0xFF
-            val nalPos: Int = when {
-                b0 == 0 && b1 == 0 && b2 == 1 -> i + 3
-                b0 == 0 && b1 == 0 && b2 == 0 && (i + 3 < len) && (d[i + 3].toInt() and 0xFF) == 1 -> i + 4
-                else -> { i++; continue }
-            }
-            if (nalPos < len) {
-                val t = d[nalPos].toInt() and 0x1F
-                if (t == 7 || t == 5) return true // SPS or IDR
-            }
-            i = nalPos + 1
-        }
-        return false
     }
 
     // ---- ByteArray プール ----
