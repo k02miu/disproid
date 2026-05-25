@@ -21,13 +21,16 @@ class MirrorActivity : Activity(), SurfaceHolder.Callback {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // 画面オフ防止 + 全画面
+        // 画面オフ防止
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        hideSystemUi()
 
+        // setContentView より前に insetsController へ触ると DecorView 未生成で NPE になるため、
+        // 必ず setContentView 後に hideSystemUi() を呼ぶ。
         surfaceView = SurfaceView(this)
         setContentView(surfaceView)
         surfaceView.holder.addCallback(this)
+
+        hideSystemUi()
     }
 
     override fun onResume() {
@@ -63,7 +66,9 @@ class MirrorActivity : Activity(), SurfaceHolder.Callback {
     private fun hideSystemUi() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             window.setDecorFitsSystemWindows(false)
-            window.insetsController?.let {
+            // DecorView 未生成だと getInsetsController() が NPE を投げるため保護する
+            val controller = try { window.insetsController } catch (e: Exception) { null }
+            controller?.let {
                 it.hide(android.view.WindowInsets.Type.systemBars())
                 it.systemBarsBehavior =
                     android.view.WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
