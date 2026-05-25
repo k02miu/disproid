@@ -26,16 +26,14 @@ class MainActivity : AppCompatActivity() {
     private lateinit var resolutionDropdown: MaterialAutoCompleteTextView
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        // 起動スプラッシュ（super.onCreate より前に呼ぶ）。
-        // 既定だと一瞬で消えて見えないため、約 800ms 保持して視認できるようにする。
-        val splash = installSplashScreen()
-        var keepSplash = true
-        splash.setKeepOnScreenCondition { keepSplash }
-        android.os.Handler(android.os.Looper.getMainLooper())
-            .postDelayed({ keepSplash = false }, 800)
-
+        // コールド起動時のシステムスプラッシュ（プロセス未起動時のみ）
+        installSplashScreen()
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+
+        // アプリ内スプラッシュ：ウォーム起動でも毎回必ず見えるよう、
+        // ロゴをオーバーレイ表示してフェードアウトする。
+        showInAppSplash()
 
         setSupportActionBar(findViewById<MaterialToolbar>(R.id.toolbar))
 
@@ -51,6 +49,35 @@ class MainActivity : AppCompatActivity() {
         stopButton.setOnClickListener { stopAdvertising() }
 
         maybeRequestNotificationPermission()
+    }
+
+    /** ウォーム起動でも見える、アプリ内スプラッシュ（ブランド色＋ロゴ→フェードアウト）。 */
+    private fun showInAppSplash() {
+        val brand = ContextCompat.getColor(this, R.color.brand_primary)
+        val overlay = android.widget.FrameLayout(this).apply {
+            setBackgroundColor(brand)
+            isClickable = true // 背後への誤タップ防止
+        }
+        val iconPx = (160 * resources.displayMetrics.density).toInt()
+        val icon = android.widget.ImageView(this).apply {
+            setImageResource(R.mipmap.ic_launcher_glyph)
+        }
+        overlay.addView(
+            icon,
+            android.widget.FrameLayout.LayoutParams(iconPx, iconPx, android.view.Gravity.CENTER)
+        )
+        addContentView(
+            overlay,
+            android.widget.FrameLayout.LayoutParams(
+                android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
+                android.widget.FrameLayout.LayoutParams.MATCH_PARENT
+            )
+        )
+        overlay.postDelayed({
+            overlay.animate().alpha(0f).setDuration(350).withEndAction {
+                (overlay.parent as? android.view.ViewGroup)?.removeView(overlay)
+            }.start()
+        }, 900)
     }
 
     private fun setupResolutionDropdown() {
