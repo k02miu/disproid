@@ -13,7 +13,7 @@ android {
         minSdk = 26
         targetSdk = 34
         versionCode = 1
-        versionName = "0.5.1"
+        versionName = "1.0.0"
 
         ndk {
             // 当面は実機(Lenovo Yoga Pad Pro)に合わせ arm64-v8a のみ。
