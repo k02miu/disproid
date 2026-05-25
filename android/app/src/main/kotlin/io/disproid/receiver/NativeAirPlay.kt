@@ -23,6 +23,9 @@ object NativeAirPlay {
     /** raop が生成した ed25519 公開鍵(hex)。mDNS 広告の pk と一致させるために使う。 */
     external fun nativeGetPublicKey(): String
 
+    /** 映像フレームの受け取り先（[VideoSink]）を登録/解除する。null で解除。 */
+    external fun nativeSetVideoSink(sink: VideoSink?)
+
     /** ネイティブ raop サーバを停止・破棄する。 */
     external fun nativeStop()
 }
