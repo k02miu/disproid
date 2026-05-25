@@ -1,15 +1,15 @@
-# Disproid Receiver (Android) — Phase B
+# Disproid Receiver (Android) — Phase C
 
 Android タブレットを Mac のワイヤレス拡張ディスプレイにするための **AirPlay 受信機アプリ**。
 自分を **Apple TV（`AppleTV3,2`）として mDNS 公開**し、macOS の画面ミラーリング一覧に Apple TV 種別で出現する。
-接続が来ると **UxPlay 由来のネイティブ AirPlay コア**が RTSP/ペアリングのやり取りを行う。
+接続が来ると **UxPlay 由来のネイティブ AirPlay コア**が RTSP/ペアリングを処理し、受信した H.264 を **MediaCodec → Surface** で全画面表示する。
 
 > **フェーズ全体像**
 > - **Phase A（完了）**: プロジェクト骨組み + Apple TV としての mDNS 公開（発見・列挙）。
-> - **Phase B（このフェーズ）**: ネイティブ AirPlay コアのビルド基盤 + 接続確立。
->   raop(HTTP/RTSP)サーバを起動し、Mac の接続→ペアリング/RTSP のやり取りを行う。**映像表示はまだ**。
-> - **Phase C（次）**: `video_process`(H264)→MediaCodec+Surface、`audio_process`(AAC)→AudioTrack で**画面を表示**。
-> - **Phase D**: 拡張ディスプレイ最適化（解像度ネゴ・回転・遅延・安定化）。
+> - **Phase B（完了）**: ネイティブ AirPlay コアのビルド基盤 + 接続確立（ペアリング/RTSP）。
+> - **Phase C（このフェーズ）**: `video_process`(H.264 Annex-B) → MediaCodec → Surface で**画面を全画面表示**。
+>   音声は未対応（`audio_process` はログのみ）。
+> - **Phase D（次）**: 音声（AudioTrack）、拡張ディスプレイ最適化（解像度ネゴ・回転・遅延・安定化）、H.265。
 
 ## ⚠️ ライセンス注意
 
@@ -93,17 +93,16 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 3. **Mac 側**:
    - `dns-sd -B _airplay._tcp` に "Disproid Receiver" が出る。
    - コントロールセンター → 画面ミラーリングに **Apple TV 種別**で出現。
-4. **接続を試す**: 一覧から選んで接続を開始すると、ネイティブ raop が応答し、
-   RTSP/ペアリングのやり取りが始まる。映像はまだ出ない（Phase C 未実装）が、
-   ハンドシェイクが進む様子をログで確認できる:
-   ```bash
-   adb logcat -s DisproidNative DisproidReceiver
-   # 例: "接続要求: ... -> 受理", "conn_init", "video_set_codec=1", "video_process: N bytes (Phase B: 破棄)"
-   ```
+4. **接続**: 一覧から選ぶとペアリング→ミラーリングが始まり、**全画面 MirrorActivity に Mac の画面が表示**される。
+   - 自動で前面に来ない場合（バックグラウンド起動制限）は、**通知をタップ**して開く。
+   - ログ確認:
+     ```bash
+     adb logcat -s DisproidNative DisproidReceiver
+     # 例: "video_set_codec=1", "MediaCodec(video/avc) 構成: 1xxx x ...", "mirror_video_running=1"
+     ```
 5. 「停止」で raop 停止 + mDNS 公開解除。
 
-> Phase B の到達点は「Mac が接続し、ペアリング/RTSP のやり取りが logcat に出る」こと。
-> 画面が映るのは Phase C。
+> Phase C の到達点は「Mac の画面がタブレットに映る」こと（音声は Phase D）。
 
 ## ネイティブ構成
 
