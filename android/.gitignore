@@ -7,3 +7,9 @@ local.properties
 captures/
 .externalNativeBuild/
 .cxx/
+
+# クロスコンパイル元のソース(大きい・スクリプトで再取得可能)
+native-deps/src/
+# OpenSSL クロスコンパイル成果物(8MB超のバイナリ+大量ヘッダ。
+# native-deps/build-openssl-android.sh で再生成する)
+app/src/main/cpp/prebuilt/
