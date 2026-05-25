@@ -16,6 +16,9 @@ let package = Package(
         .executableTarget(
             name: "disproid-helper",
             dependencies: ["CGVirtualDisplayInterface"],
+            resources: [
+                .process("Resources")
+            ],
             linkerSettings: [
                 .linkedFramework("CoreGraphics"),
                 .linkedFramework("ScreenCaptureKit"),

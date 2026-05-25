@@ -5,18 +5,27 @@ struct DisproidHelperApp: App {
     @StateObject private var engine = StreamEngine()
 
     var body: some Scene {
-        MenuBarExtra("Disproid", systemImage: menuIcon) {
+        MenuBarExtra {
             ControlView(engine: engine)
+        } label: {
+            Image(nsImage: Self.menubarIcon)
         }
         .menuBarExtraStyle(.window)
     }
 
-    private var menuIcon: String {
-        switch engine.state {
-        case .streaming: return "display.and.arrow.down.fill"
-        default: return "display"
+    /// メニューバー用アイコン（disproid グリフ）。template 指定で light/dark に追従。
+    private static let menubarIcon: NSImage = {
+        let img: NSImage
+        if let url = Bundle.module.url(forResource: "menubar", withExtension: "png"),
+           let loaded = NSImage(contentsOf: url) {
+            img = loaded
+        } else {
+            img = NSImage(systemSymbolName: "display", accessibilityDescription: "Disproid") ?? NSImage()
         }
-    }
+        img.size = NSSize(width: 18, height: 18)
+        img.isTemplate = true
+        return img
+    }()
 }
 
 struct ControlView: View {
