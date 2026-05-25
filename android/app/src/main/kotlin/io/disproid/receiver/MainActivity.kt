@@ -10,7 +10,7 @@ import android.widget.Button
 import android.widget.TextView
 
 /**
- * 最小 UI。広告サービスの開始/停止と状態表示のみ。
+ * 最小 UI。公開サービスの開始/停止と状態表示のみ。
  */
 class MainActivity : Activity() {
 

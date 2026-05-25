@@ -18,11 +18,11 @@ import java.net.Socket
 import kotlin.concurrent.thread
 
 /**
- * フォアグラウンドサービス。画面オフでも mDNS 広告を継続する。
+ * フォアグラウンドサービス。画面オフでも mDNS 公開を継続する。
  *
  * 役割（Phase A）:
  *  1. TCP サーバを listen（接続が来てもログのみ。プロトコル処理は次フェーズ）
- *  2. NsdManager で `_airplay._tcp` を上記ポートで広告し、TXT に Apple TV 識別属性を載せる
+ *  2. NsdManager で `_airplay._tcp` を上記ポートで公開し、TXT に Apple TV 識別属性を載せる
  *
  * ペアリング・暗号・映像は一切扱わない。
  */
@@ -135,7 +135,7 @@ class AdvertiseService : Service() {
 
         val listener = object : NsdManager.RegistrationListener {
             override fun onServiceRegistered(serviceInfo: NsdServiceInfo) {
-                val msg = "広告中: ${serviceInfo.serviceName} (${AirPlayTxtRecord.SERVICE_TYPE}) " +
+                val msg = "公開中: ${serviceInfo.serviceName} (${AirPlayTxtRecord.SERVICE_TYPE}) " +
                     "port=$port model=${AirPlayTxtRecord.MODEL}"
                 Log.i(TAG, msg)
                 StatusBus.update(running = true, status = msg)
@@ -156,7 +156,7 @@ class AdvertiseService : Service() {
         }
         registrationListener = listener
         manager.registerService(info, NsdManager.PROTOCOL_DNS_SD, listener)
-        StatusBus.update(running = true, status = "広告登録中… port=$port")
+        StatusBus.update(running = true, status = "公開登録中… port=$port")
     }
 
     private fun unregisterService() {
@@ -180,15 +180,15 @@ class AdvertiseService : Service() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 CHANNEL_ID,
-                "AirPlay 広告",
+                "AirPlay 公開",
                 NotificationManager.IMPORTANCE_LOW
-            ).apply { description = "Apple TV として mDNS 広告を継続中" }
+            ).apply { description = "Apple TV として mDNS 公開を継続中" }
             nm.createNotificationChannel(channel)
         }
 
         val notification: Notification = Notification.Builder(this, CHANNEL_ID)
             .setContentTitle("Disproid Receiver")
-            .setContentText("Apple TV として広告中")
+            .setContentText("Apple TV として公開中")
             .setSmallIcon(android.R.drawable.stat_sys_data_bluetooth)
             .setOngoing(true)
             .build()

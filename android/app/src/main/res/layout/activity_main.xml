@@ -28,7 +28,7 @@
         android:id="@+id/startButton"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="広告を開始 (Apple TV として出現)" />
+        android:text="公開を開始 (Apple TV として出現)" />
 
     <Button
         android:id="@+id/stopButton"

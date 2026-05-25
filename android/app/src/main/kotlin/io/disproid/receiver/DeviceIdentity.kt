@@ -5,7 +5,7 @@ import java.security.SecureRandom
 import java.util.UUID
 
 /**
- * AirPlay 広告で使う端末固有の識別子を生成・永続化する。
+ * AirPlay 公開で使う端末固有の識別子を生成・永続化する。
  *
  * 実際の Wi-Fi MAC アドレスは Android 10+ で取得が制限されているため、
  * deviceid はランダム生成して SharedPreferences に保存し、端末内で安定させる。

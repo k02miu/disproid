@@ -1,19 +1,19 @@
 # Disproid Receiver (Android) — Phase A
 
 Android タブレットを Mac のワイヤレス拡張ディスプレイにするための **AirPlay 受信機アプリ**。
-自分を **Apple TV（`AppleTV3,2`）として mDNS 広告**し、macOS の画面ミラーリング一覧に Apple TV 種別のデバイスとして出現させる。
+自分を **Apple TV（`AppleTV3,2`）として mDNS 公開**し、macOS の画面ミラーリング一覧に Apple TV 種別のデバイスとして出現させる。
 
-> **Phase A のスコープ**: プロジェクト骨組み + mDNS 広告（発見・列挙されること）まで。
+> **Phase A のスコープ**: プロジェクト骨組み + mDNS 公開（発見・列挙されること）まで。
 > 接続後の AirPlay プロトコル（ペアリング・FairPlay・暗号・映像デコード）は次フェーズで、本フェーズでは扱わない。
 > 接続を試みてもスタブ TCP サーバが何もしないため失敗するのは想定内。
 
 ## できること（Phase A）
 
-- フォアグラウンドサービスで mDNS（`NsdManager`）により `_airplay._tcp` を広告（画面オフでも継続）。
+- フォアグラウンドサービスで mDNS（`NsdManager`）により `_airplay._tcp` を公開（画面オフでも継続）。
 - TXT レコードに Apple TV 識別属性（`model=AppleTV3,2` 等）を付与。
 - スタブの TCP サーバを listen（接続が来たらログのみ）。
 
-## 広告する TXT レコード
+## 公開する TXT レコード
 
 手本は **UxPlay**（`lib/dnssd.c` の `dnssd_register_airplay` / `lib/dnssdint.h` / `lib/global.h`）。
 UxPlay は同一 LAN 上で `AppleTV3,2` として macOS に Apple TV 種別で列挙される実績があり、`dns-sd` での on-wire 観測値とも一致する。
@@ -68,16 +68,16 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 ## 動作確認手順
 
 1. タブレットとビルド用 Mac を **同じ Wi-Fi（同一サブネット）** に接続する。
-2. アプリを起動し「広告を開始」を押す（通知許可を求められたら許可）。画面に `広告中: …` と表示される。
+2. アプリを起動し「公開を開始」を押す（通知許可を求められたら許可）。画面に `公開中: …` と表示される。
 3. **Mac 側**で確認:
-   - `dns-sd` で広告を観測:
+   - `dns-sd` で公開を観測:
      ```bash
      dns-sd -B _airplay._tcp        # 一覧に "Disproid Receiver" が出る
      dns-sd -L "Disproid Receiver" _airplay._tcp local   # TXT に model=AppleTV3,2 を確認
      ```
    - コントロールセンター → 画面ミラーリングに、このタブレットが **Apple TV 種別**で出現する。
 4. （想定内）クリックして接続すると、Phase A はスタブのため接続は失敗する。
-5. 「停止」またはアプリ終了で広告が消える。
+5. 「停止」またはアプリ終了で公開が消える。
 
 ## トラブルシュート
 
@@ -95,7 +95,7 @@ android/
     src/main/AndroidManifest.xml
     src/main/kotlin/io/disproid/receiver/
       MainActivity.kt        # 最小 UI（開始/停止/状態）
-      AdvertiseService.kt    # FGS: TCP listen + NsdManager 広告
+      AdvertiseService.kt    # FGS: TCP listen + NsdManager 公開
       AirPlayTxtRecord.kt    # TXT レコード定義（UxPlay 手本）
       DeviceIdentity.kt      # deviceid/pi/pk の生成・永続化
       StatusBus.kt           # サービス→UI の状態通知
