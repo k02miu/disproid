@@ -40,6 +40,11 @@ class AdvertiseService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action == ACTION_STOP) {
+            Log.i(TAG, "停止アクション受信")
+            stopSelf()
+            return START_NOT_STICKY
+        }
         if (nativeStarted) {
             return START_STICKY
         }
@@ -48,8 +53,13 @@ class AdvertiseService : Service() {
             val keyfile = File(filesDir, "airplay_ed25519.key").absolutePath
             val name = getString(R.string.service_display_name)
 
+            // タブレット実ディスプレイの解像度・リフレッシュレートを /info で Mac に報告し、
+            // タブレットのアスペクト比に合った映像を送らせる。
+            val (dispW, dispH, dispHz) = displayInfo()
+            Log.i(TAG, "タブレットディスプレイ: ${dispW}x${dispH} @${dispHz}Hz")
+
             // ネイティブ raop サーバ起動 → listen ポート取得
-            val port = NativeAirPlay.nativeStart(identity.deviceId, name, keyfile)
+            val port = NativeAirPlay.nativeStart(identity.deviceId, name, keyfile, dispW, dispH, dispHz)
             if (port < 0) {
                 throw IllegalStateException("nativeStart 失敗 (code=$port)")
             }
@@ -97,6 +107,34 @@ class AdvertiseService : Service() {
             }
             nativeStarted = false
         }
+    }
+
+    /** タブレットの実ディスプレイ解像度(landscape の長辺=width)とリフレッシュレートを返す。 */
+    private fun displayInfo(): Triple<Int, Int, Int> {
+        val wm = getSystemService(Context.WINDOW_SERVICE) as android.view.WindowManager
+        var w = 1920
+        var h = 1080
+        var hz = 60
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                val b = wm.currentWindowMetrics.bounds
+                w = b.width()
+                h = b.height()
+            } else {
+                @Suppress("DEPRECATION")
+                val dm = resources.displayMetrics
+                w = dm.widthPixels
+                h = dm.heightPixels
+            }
+            @Suppress("DEPRECATION")
+            hz = wm.defaultDisplay.refreshRate.toInt().coerceIn(30, 240)
+        } catch (e: Throwable) {
+            Log.w(TAG, "ディスプレイ情報取得失敗、既定値を使用", e)
+        }
+        // landscape（長辺を width に）
+        val lw = maxOf(w, h)
+        val lh = minOf(w, h)
+        return Triple(lw, lh, hz)
     }
 
     /** ミラー開始時に全画面 MirrorActivity を起動する（ベストエフォート）。
@@ -188,11 +226,19 @@ class AdvertiseService : Service() {
             PendingIntent.FLAG_IMMUTABLE
         )
 
+        // 通知の「停止」アクション（全画面表示中でも通知シェードから停止できる）
+        val stopPending = PendingIntent.getService(
+            this, 1,
+            Intent(this, AdvertiseService::class.java).setAction(ACTION_STOP),
+            PendingIntent.FLAG_IMMUTABLE
+        )
+
         val notification: Notification = Notification.Builder(this, CHANNEL_ID)
             .setContentTitle("Disproid Receiver")
             .setContentText("Apple TV として公開中（タップでミラー表示）")
             .setSmallIcon(android.R.drawable.stat_sys_data_bluetooth)
             .setContentIntent(openMirror)
+            .addAction(Notification.Action.Builder(null, "停止", stopPending).build())
             .setOngoing(true)
             .build()
 
@@ -211,5 +257,6 @@ class AdvertiseService : Service() {
         private const val TAG = "DisproidReceiver"
         private const val CHANNEL_ID = "disproid_advertise"
         private const val NOTIF_ID = 1
+        const val ACTION_STOP = "io.disproid.receiver.action.STOP"
     }
 }

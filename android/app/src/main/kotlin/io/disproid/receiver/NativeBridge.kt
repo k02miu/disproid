@@ -19,8 +19,11 @@ object NativeBridge : VideoSink {
     /** 実描画先（MirrorActivity の Surface が準備できたら設定される）。 */
     @Volatile var frameSink: VideoSink? = null
 
-    /** ミラー状態リスナ（Service が登録）。メインスレッドで呼ぶ。 */
+    /** ミラー状態リスナ（Service が登録：開始で MirrorActivity 起動）。メインスレッドで呼ぶ。 */
     @Volatile var mirrorListener: ((Boolean) -> Unit)? = null
+
+    /** ミラー状態リスナ（MirrorActivity が登録：終了で自分を閉じる）。メインスレッドで呼ぶ。 */
+    @Volatile var mirrorUiListener: ((Boolean) -> Unit)? = null
 
     @Volatile var sourceWidth: Int = 1920
         private set
@@ -41,7 +44,10 @@ object NativeBridge : VideoSink {
     }
 
     override fun onMirrorState(running: Boolean) {
-        mainHandler.post { mirrorListener?.invoke(running) }
+        mainHandler.post {
+            mirrorListener?.invoke(running)
+            mirrorUiListener?.invoke(running)
+        }
         frameSink?.onMirrorState(running)
     }
 }

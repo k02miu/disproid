@@ -31,6 +31,14 @@ class MirrorActivity : Activity(), SurfaceHolder.Callback {
         surfaceView.holder.addCallback(this)
 
         hideSystemUi()
+
+        // ミラー終了(Mac 切断)で自動的に閉じ、MainActivity に戻る
+        NativeBridge.mirrorUiListener = { running ->
+            if (!running && !isFinishing) {
+                Log.i(TAG, "ミラー終了を検知 → MirrorActivity を閉じる")
+                finish()
+            }
+        }
     }
 
     override fun onResume() {
@@ -56,6 +64,7 @@ class MirrorActivity : Activity(), SurfaceHolder.Callback {
     }
 
     override fun onDestroy() {
+        NativeBridge.mirrorUiListener = null
         if (NativeBridge.frameSink === decoder) {
             NativeBridge.frameSink = null
         }
