@@ -8,6 +8,13 @@
         <item name="colorOnPrimaryContainer">@color/brand_on_primary_container</item>
     </style>
 
+    <!-- 起動スプラッシュ（androidx core-splashscreen）。白背景にアプリアイコン。 -->
+    <style name="Theme.Disproid.Splash" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/ic_launcher_background</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_launcher_foreground</item>
+        <item name="postSplashScreenTheme">@style/Theme.Disproid</item>
+    </style>
+
     <!-- ミラー表示用の全画面・黒背景テーマ -->
     <style name="Theme.Disproid.Mirror" parent="Theme.Material3.DayNight.NoActionBar">
         <item name="android:windowBackground">@android:color/black</item>

@@ -8,6 +8,7 @@ import android.os.Build
 import android.os.Bundle
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.textfield.MaterialAutoCompleteTextView
@@ -25,6 +26,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var resolutionDropdown: MaterialAutoCompleteTextView
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        // 起動スプラッシュ（super.onCreate より前に呼ぶ）
+        installSplashScreen()
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
