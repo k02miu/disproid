@@ -1,4 +1,12 @@
+# --- macOS / Swift ---
 .build/
 .DS_Store
 *.xcodeproj
 .swiftpm/
+
+# --- エディタ/エージェント/ローカル設定（公開しない） ---
+.claude/
+.serena/
+.mcp.json
+.idea/
+*.iml
