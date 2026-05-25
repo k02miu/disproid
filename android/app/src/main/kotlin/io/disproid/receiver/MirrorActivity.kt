@@ -118,6 +118,24 @@ class MirrorActivity : Activity(), SurfaceHolder.Callback {
         }
     }
 
+    /** タブレットの実画面解像度を landscape（長辺=幅）で返す。 */
+    private fun deviceLandscapeSize(): Pair<Int, Int> {
+        var w = 1920
+        var h = 1080
+        try {
+            val wm = getSystemService(WINDOW_SERVICE) as WindowManager
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                val b = wm.currentWindowMetrics.bounds
+                w = b.width(); h = b.height()
+            } else {
+                @Suppress("DEPRECATION")
+                val dm = resources.displayMetrics
+                w = dm.widthPixels; h = dm.heightPixels
+            }
+        } catch (_: Throwable) {}
+        return Pair(maxOf(w, h), minOf(w, h))
+    }
+
     /** USB 受信時の映像サイズ通知でアスペクト比を更新（メインスレッドへ）。 */
     private fun onUsbFormat(w: Int, h: Int) {
         runOnUiThread {
@@ -254,9 +272,12 @@ class MirrorActivity : Activity(), SurfaceHolder.Callback {
         decoder.setSurface(holder.surface)
         if (usbMode) {
             // USB: localhost に接続して受信開始。フレームはデコーダへ直接流す。
+            val (dw, dh) = deviceLandscapeSize()
             val receiver = UsbVideoReceiver(
                 sink = decoder,
                 onFormat = { w, h -> onUsbFormat(w, h) },
+                deviceWidth = dw,
+                deviceHeight = dh,
                 onError = { msg ->
                     runOnUiThread {
                         if (!isFinishing) {

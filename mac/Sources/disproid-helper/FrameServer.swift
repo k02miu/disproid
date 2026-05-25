@@ -5,14 +5,13 @@ import Network
 /// 映像ストリームを送る TCP サーバ。
 ///
 /// プロトコル:
-///   ヘッダ(14B): "DPRD"(4) + version(1) + codec(1: 0=H264,1=H265) + width(4, BE) + height(4, BE)
-///   以降くり返し: length(4, BE) + Annex-B アクセスユニット(length バイト)
+///   1. クライアント→サーバ: "DPRQ"(4) + width(4,BE) + height(4,BE)  … タブレットの画面解像度
+///   2. サーバ→クライアント(ヘッダ14B): "DPRD"(4) + version(1) + codec(1) + width(4,BE) + height(4,BE)
+///   3. 以降くり返し: length(4,BE) + Annex-B アクセスユニット
 final class FrameServer {
 
     private let port: UInt16
     private let codecByte: UInt8
-    private let width: UInt32
-    private let height: UInt32
     private let queue = DispatchQueue(label: "io.disproid.server")
     private var listener: NWListener?
     private var connection: NWConnection?
@@ -22,25 +21,21 @@ final class FrameServer {
     private var inFlight = 0
     private let maxInFlight = 2
 
-    /// 送信が詰まっている（= 受信側が遅れている）か。true の間はエンコードをスキップして良い。
     var isBacklogged: Bool {
         lock.lock(); defer { lock.unlock() }
         return inFlight >= maxInFlight
     }
 
-    /// クライアント接続/切断の通知（任意のスレッドから呼ばれる）。
-    var onClientConnected: (() -> Void)?
+    /// クライアントが解像度を通知してきた（任意スレッド）。これを受けて Mac 側でパイプラインを構築する。
+    var onClientResolution: ((Int, Int) -> Void)?
     var onClientDisconnected: (() -> Void)?
 
-    init(port: UInt16, isH265: Bool, width: Int, height: Int) {
+    init(port: UInt16, isH265: Bool) {
         self.port = port
         self.codecByte = isH265 ? 1 : 0
-        self.width = UInt32(width)
-        self.height = UInt32(height)
     }
 
     func start() throws {
-        // Nagle 無効（低遅延）
         let tcpOptions = NWProtocolTCP.Options()
         tcpOptions.noDelay = true
         let params = NWParameters(tls: nil, tcp: tcpOptions)
@@ -55,15 +50,11 @@ final class FrameServer {
     }
 
     private func accept(_ conn: NWConnection) {
-        // 単一クライアント前提。既存接続は破棄して差し替え。
         connection?.cancel()
         connection = conn
         lock.lock(); inFlight = 0; lock.unlock()
         conn.stateUpdateHandler = { [weak self] state in
             switch state {
-            case .ready:
-                FileHandle.standardError.write(Data("[server] client connected\n".utf8))
-                self?.onClientConnected?()
             case .failed, .cancelled:
                 self?.onClientDisconnected?()
             default:
@@ -71,16 +62,31 @@ final class FrameServer {
             }
         }
         conn.start(queue: queue)
-        sendHeader(conn)
+        // クライアントの解像度要求(12B)を受信
+        conn.receive(minimumIncompleteLength: 12, maximumLength: 12) { [weak self] data, _, _, _ in
+            guard let self = self, let data = data, data.count >= 12 else { return }
+            let bytes = [UInt8](data)
+            let magic = String(decoding: bytes[0..<4], as: UTF8.self)
+            guard magic == "DPRQ" else {
+                FileHandle.standardError.write(Data("[server] 不正な要求ヘッダ\n".utf8))
+                return
+            }
+            let w = Int(Self.beUInt32(bytes, 4))
+            let h = Int(Self.beUInt32(bytes, 8))
+            FileHandle.standardError.write(Data("[server] client connected, 要求解像度 \(w)x\(h)\n".utf8))
+            self.onClientResolution?(w, h)
+        }
     }
 
-    private func sendHeader(_ conn: NWConnection) {
+    /// パイプライン構築後にヘッダを送る（実際の送出解像度を入れる）。
+    func sendHeader(width: Int, height: Int) {
+        guard let conn = connection else { return }
         var h = Data()
         h.append(contentsOf: Array("DPRD".utf8))
         h.append(1) // version
         h.append(codecByte)
-        h.append(beUInt32(width))
-        h.append(beUInt32(height))
+        h.append(beData(UInt32(width)))
+        h.append(beData(UInt32(height)))
         conn.send(content: h, completion: .contentProcessed { _ in })
     }
 
@@ -88,7 +94,7 @@ final class FrameServer {
     func sendAccessUnit(_ data: Data) {
         guard let conn = connection else { return }
         var framed = Data()
-        framed.append(beUInt32(UInt32(data.count)))
+        framed.append(beData(UInt32(data.count)))
         framed.append(data)
         lock.lock(); inFlight += 1; lock.unlock()
         conn.send(content: framed, completion: .contentProcessed { [weak self] _ in
@@ -104,8 +110,12 @@ final class FrameServer {
         listener = nil
     }
 
-    private func beUInt32(_ v: UInt32) -> Data {
+    private func beData(_ v: UInt32) -> Data {
         var be = v.bigEndian
         return Data(bytes: &be, count: 4)
+    }
+
+    private static func beUInt32(_ b: [UInt8], _ o: Int) -> UInt32 {
+        return (UInt32(b[o]) << 24) | (UInt32(b[o + 1]) << 16) | (UInt32(b[o + 2]) << 8) | UInt32(b[o + 3])
     }
 }

@@ -22,6 +22,7 @@ struct DisproidHelperApp: App {
 struct ControlView: View {
     @ObservedObject var engine: StreamEngine
 
+    private let autoLabel = "自動（タブレットに合わせる）"
     private let resolutions: [(String, Int, Int)] = [
         ("1280 × 720", 1280, 720),
         ("1920 × 1080", 1920, 1080),
@@ -52,12 +53,19 @@ struct ControlView: View {
 
             // 解像度（停止中のみ変更可）
             Picker("解像度", selection: resolutionBinding) {
+                Text(autoLabel).tag(autoLabel)
                 ForEach(resolutions, id: \.0) { item in
                     Text(item.0).tag(item.0)
                 }
             }
             .disabled(engine.isRunning)
             .pickerStyle(.menu)
+
+            if engine.state == .streaming, !engine.activeResolution.isEmpty {
+                Text("送出: \(engine.activeResolution)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
 
             // ビットレート（稼働中でも変更可＝ライブ反映）
             Picker("画質(ビットレート)", selection: $engine.bitrateMbps) {
@@ -107,9 +115,15 @@ struct ControlView: View {
 
     private var resolutionBinding: Binding<String> {
         Binding(
-            get: { resolutions.first { $0.1 == engine.width && $0.2 == engine.height }?.0 ?? resolutions[1].0 },
+            get: {
+                if engine.autoResolution { return autoLabel }
+                return resolutions.first { $0.1 == engine.width && $0.2 == engine.height }?.0 ?? autoLabel
+            },
             set: { label in
-                if let item = resolutions.first(where: { $0.0 == label }) {
+                if label == autoLabel {
+                    engine.autoResolution = true
+                } else if let item = resolutions.first(where: { $0.0 == label }) {
+                    engine.autoResolution = false
                     engine.width = item.1
                     engine.height = item.2
                 }

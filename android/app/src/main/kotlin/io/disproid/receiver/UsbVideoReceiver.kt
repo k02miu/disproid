@@ -21,6 +21,9 @@ class UsbVideoReceiver(
     private val sink: VideoSink,
     private val onFormat: (Int, Int) -> Unit,
     private val onError: (String) -> Unit,
+    /** タブレットの実画面解像度(landscape)。接続時に Mac へ通知し、Mac が一致する仮想ディスプレイを作る。 */
+    private val deviceWidth: Int,
+    private val deviceHeight: Int,
     private val host: String = "127.0.0.1",
     private val port: Int = 27184,
 ) {
@@ -49,6 +52,15 @@ class UsbVideoReceiver(
             s.connect(InetSocketAddress(host, port), 5000)
             s.tcpNoDelay = true
             socket = s
+
+            // 接続要求: 自分の画面解像度を通知（"DPRQ" + width + height, BE）
+            val out = java.io.DataOutputStream(s.getOutputStream())
+            out.writeBytes("DPRQ")
+            out.writeInt(deviceWidth)
+            out.writeInt(deviceHeight)
+            out.flush()
+            Log.i(TAG, "解像度を通知: ${deviceWidth}x${deviceHeight}")
+
             val input = DataInputStream(s.getInputStream().buffered(1 shl 16))
 
             // ヘッダ

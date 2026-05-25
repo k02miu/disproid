@@ -3,22 +3,26 @@ import Combine
 import CoreGraphics
 
 /// 仮想ディスプレイ生成 → キャプチャ → エンコード → USB(adb) 送信、の一連を管理する。
-/// SwiftUI から状態を監視できる ObservableObject。
+/// クライアント(タブレット)が接続時に解像度を通知し、Mac はそれに合わせて
+/// （または固定指定で）仮想ディスプレイを作る。
 final class StreamEngine: ObservableObject {
 
     enum State: Equatable {
         case stopped
         case starting
-        case waitingForClient     // 起動済み・タブレット接続待ち
-        case streaming            // タブレット接続中
+        case waitingForClient
+        case streaming
         case error(String)
     }
 
     @Published private(set) var state: State = .stopped
     @Published private(set) var statsText: String = ""
+    @Published private(set) var activeResolution: String = ""
+
+    /// 自動（タブレット解像度に合わせる）。false なら下の width/height を使う。
+    @Published var autoResolution: Bool = true
     @Published var width: Int = 1920
     @Published var height: Int = 1080
-    /// ビットレート(Mbps)。稼働中の変更もエンコーダへ即反映する。
     @Published var bitrateMbps: Int = 20 {
         didSet { encoder?.setBitrate(bitrateMbps * 1_000_000) }
     }
@@ -33,41 +37,29 @@ final class StreamEngine: ObservableObject {
     private var capturer: ScreenCapturer?
     private var statTimer: DispatchSourceTimer?
 
-    // 統計
     private var statCaptured = 0
     private var statEncoded = 0
     private var statBytes = 0
 
     var isRunning: Bool {
-        if case .stopped = state { return false }
-        if case .error = state { return false }
-        return true
+        switch state {
+        case .stopped, .error: return false
+        default: return true
+        }
     }
+
+    // MARK: - 開始/停止
 
     func start() {
         guard !isRunning else { return }
         setState(.starting)
 
-        let w = width, h = height
-
-        // 仮想ディスプレイ
-        var opts = Options()
-        opts.width = UInt32(w)
-        opts.height = UInt32(h)
-        opts.name = "Disproid Virtual Display"
-        let vd = VirtualDisplay(options: opts)
-        virtualDisplay = vd
-
-        // サーバ
-        let srv = FrameServer(port: hostPort, isH265: isH265, width: w, height: h)
-        srv.onClientConnected = { [weak self] in
-            DispatchQueue.main.async { self?.setState(.streaming) }
+        let srv = FrameServer(port: hostPort, isH265: isH265)
+        srv.onClientResolution = { [weak self] w, h in
+            DispatchQueue.main.async { self?.handleClientResolution(w, h) }
         }
         srv.onClientDisconnected = { [weak self] in
-            DispatchQueue.main.async {
-                guard let self = self, self.isRunning else { return }
-                self.setState(.waitingForClient)
-            }
+            DispatchQueue.main.async { self?.handleClientDisconnected() }
         }
         do {
             try srv.start()
@@ -77,9 +69,44 @@ final class StreamEngine: ObservableObject {
         }
         server = srv
         AdbBridge.reverse(devicePort: devicePort, hostPort: hostPort)
+        startStatsTimer()
+        setState(.waitingForClient)
+    }
+
+    func stop() {
+        statTimer?.cancel(); statTimer = nil
+        teardownPipeline()
+        server?.stop(); server = nil
+        AdbBridge.removeReverse(devicePort: devicePort)
+        statsText = ""
+        activeResolution = ""
+        setState(.stopped)
+    }
+
+    // MARK: - クライアント接続時にパイプラインを構築
+
+    private func handleClientResolution(_ w: Int, _ h: Int) {
+        guard isRunning else { return }
+        teardownPipeline()  // 再接続に備え既存を破棄
+
+        // 目標解像度: 自動ならタブレット通知値、固定なら GUI 指定。偶数化。
+        let tw = (autoResolution ? w : width).evenized
+        let th = (autoResolution ? h : height).evenized
+        guard tw > 0, th > 0 else {
+            setState(.error("解像度が不正: \(tw)x\(th)"))
+            return
+        }
+
+        // 仮想ディスプレイ
+        var opts = Options()
+        opts.width = UInt32(tw)
+        opts.height = UInt32(th)
+        opts.name = "Disproid Virtual Display"
+        let vd = VirtualDisplay(options: opts)
+        virtualDisplay = vd
 
         // エンコーダ
-        let enc = VideoEncoder(width: w, height: h, codec: isH265 ? .h265 : .h264, bitrate: bitrateMbps * 1_000_000)
+        let enc = VideoEncoder(width: tw, height: th, codec: isH265 ? .h265 : .h264, bitrate: bitrateMbps * 1_000_000)
         enc.onEncoded = { [weak self] data, _ in
             self?.statEncoded += 1
             self?.statBytes += data.count
@@ -94,7 +121,7 @@ final class StreamEngine: ObservableObject {
         encoder = enc
 
         // キャプチャ
-        let cap = ScreenCapturer(displayID: vd.displayID, width: w, height: h, fps: 60)
+        let cap = ScreenCapturer(displayID: vd.displayID, width: tw, height: th, fps: 60)
         cap.onFrame = { [weak self] imageBuffer, pts in
             guard let self = self else { return }
             self.statCaptured += 1
@@ -102,8 +129,11 @@ final class StreamEngine: ObservableObject {
             self.encoder?.encode(imageBuffer, pts: pts)
         }
         capturer = cap
-        setState(.waitingForClient)
-        startStatsTimer()
+
+        // ヘッダ送信（実際の送出解像度）
+        server?.sendHeader(width: tw, height: th)
+        activeResolution = "\(tw) × \(th)"
+        setState(.streaming)
 
         Task { [weak self] in
             do {
@@ -118,30 +148,24 @@ final class StreamEngine: ObservableObject {
         }
     }
 
-    func stop() {
-        statTimer?.cancel()
-        statTimer = nil
-        AdbBridge.removeReverse(devicePort: devicePort)
+    private func handleClientDisconnected() {
+        teardownPipeline()
+        if isRunning { setState(.waitingForClient) }
+    }
+
+    private func teardownPipeline() {
         let cap = capturer
         Task { await cap?.stop() }
         capturer = nil
-        encoder?.stop()
-        encoder = nil
-        server?.stop()
-        server = nil
-        virtualDisplay = nil // 解放で仮想ディスプレイ破棄
-        statsText = ""
-        setState(.stopped)
+        encoder?.stop(); encoder = nil
+        virtualDisplay = nil
     }
 
     // MARK: - private
 
     private func setState(_ s: State) {
-        if Thread.isMainThread {
-            state = s
-        } else {
-            DispatchQueue.main.async { self.state = s }
-        }
+        if Thread.isMainThread { state = s }
+        else { DispatchQueue.main.async { self.state = s } }
     }
 
     private func startStatsTimer() {
@@ -149,13 +173,15 @@ final class StreamEngine: ObservableObject {
         t.schedule(deadline: .now() + 1, repeating: 1)
         t.setEventHandler { [weak self] in
             guard let self = self else { return }
-            let cap = self.statCaptured, enc = self.statEncoded, kb = self.statBytes / 1024
+            let enc = self.statEncoded, kb = self.statBytes / 1024
             self.statCaptured = 0; self.statEncoded = 0; self.statBytes = 0
-            DispatchQueue.main.async {
-                self.statsText = "\(enc) fps / \(kb) KB/s（capture \(cap)）"
-            }
+            DispatchQueue.main.async { self.statsText = "\(enc) fps / \(kb) KB/s" }
         }
         t.resume()
         statTimer = t
     }
+}
+
+private extension Int {
+    var evenized: Int { self - (self % 2) }
 }
