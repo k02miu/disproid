@@ -2,7 +2,7 @@
 import PackageDescription
 
 let package = Package(
-    name: "disproid",
+    name: "disproid-helper",
     platforms: [
         .macOS(.v13)
     ],
@@ -14,11 +14,14 @@ let package = Package(
             name: "CGVirtualDisplayInterface"
         ),
         .executableTarget(
-            name: "disproid",
+            name: "disproid-helper",
             dependencies: ["CGVirtualDisplayInterface"],
             linkerSettings: [
-                // CGVirtualDisplay クラス群は CoreGraphics に含まれる（実機 introspection で確認済み）。
-                .linkedFramework("CoreGraphics")
+                .linkedFramework("CoreGraphics"),
+                .linkedFramework("ScreenCaptureKit"),
+                .linkedFramework("VideoToolbox"),
+                .linkedFramework("CoreMedia"),
+                .linkedFramework("CoreVideo")
             ]
         )
     ]
