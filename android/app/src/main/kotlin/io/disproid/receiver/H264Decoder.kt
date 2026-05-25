@@ -126,7 +126,7 @@ class H264Decoder : VideoSink {
             while (running) {
                 val now = System.currentTimeMillis()
                 if (now - statT0 >= 1000) {
-                    Log.i(TAG, "decode: fed=$statFed rendered=$statRendered /s (queue=${queue.size})")
+                    if (Diag.VERBOSE) Log.i(TAG, "decode: fed=$statFed rendered=$statRendered /s (queue=${queue.size})")
                     statFed = 0; statRendered = 0; statT0 = now
                 }
                 val s = surface ?: run { Thread.sleep(5); null } ?: continue

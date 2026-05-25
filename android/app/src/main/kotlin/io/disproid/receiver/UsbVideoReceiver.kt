@@ -83,7 +83,7 @@ class UsbVideoReceiver(
                 statFrames++; statBytes += len
                 val now = System.currentTimeMillis()
                 if (now - statT0 >= 1000) {
-                    Log.i(TAG, "USB rx: ${statFrames} frames/s, ${statBytes / 1024} KB/s")
+                    if (Diag.VERBOSE) Log.i(TAG, "USB rx: ${statFrames} frames/s, ${statBytes / 1024} KB/s")
                     statFrames = 0; statBytes = 0; statT0 = now
                 }
             }

@@ -267,7 +267,8 @@ Java_io_disproid_receiver_NativeAirPlay_nativeStart(JNIEnv *env, jobject thiz,
         goto cleanup_strings;
     }
     raop_set_log_callback(g_raop, log_callback, NULL);
-    raop_set_log_level(g_raop, LOGGER_DEBUG);
+    /* DEBUG は RTSP の hex ダンプ等で非常に冗長なため INFO に抑える */
+    raop_set_log_level(g_raop, LOGGER_INFO);
 
     /* nohold=1, device_id, keyfile(ed25519鍵の永続化先。NULL可) */
     if (raop_init2(g_raop, 1, deviceId, keyfile) < 0) {
