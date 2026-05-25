@@ -229,7 +229,8 @@ static int parse_mac(const char *s, unsigned char out[6]) {
 
 JNIEXPORT jint JNICALL
 Java_io_disproid_receiver_NativeAirPlay_nativeStart(JNIEnv *env, jobject thiz,
-                                                    jstring jDeviceId, jstring jName, jstring jKeyfile) {
+                                                    jstring jDeviceId, jstring jName, jstring jKeyfile,
+                                                    jint width, jint height, jint refreshRate) {
     (void) thiz;
     if (g_raop) {
         LOGW("既に起動済み");
@@ -267,9 +268,19 @@ Java_io_disproid_receiver_NativeAirPlay_nativeStart(JNIEnv *env, jobject thiz,
         goto cleanup_strings;
     }
 
-    /* ディスプレイ報告の maxFPS を 60 に上げる（既定 30 が macOS の送出上限になっていた）。
-     * /info 応答の displays[].maxFPS として報告される。要検証: 実機で 60fps 送出になるか。 */
+    /* 接続先タブレットの実ディスプレイ情報を /info の displays[] として報告し、
+     * macOS にタブレットのアスペクト比・解像度・リフレッシュレートで送らせる。
+     * width/height は landscape（長辺=width）で渡される前提。 */
+    if (width > 0 && height > 0) {
+        raop_set_plist(g_raop, "width", width);
+        raop_set_plist(g_raop, "height", height);
+    }
+    if (refreshRate > 0) {
+        raop_set_plist(g_raop, "refreshRate", refreshRate);
+    }
+    /* maxFPS の既定は 30 で macOS の送出上限になるため 60 へ。 */
     raop_set_plist(g_raop, "maxFPS", 60);
+    LOGI("display 報告: %dx%d @%dHz maxFPS=60", width, height, refreshRate);
 
     int err = 0;
     g_dnssd = dnssd_init(name, (int) strlen(name), (const char *) hw_addr, 6, &err, 0);
