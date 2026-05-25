@@ -1,9 +1,12 @@
 package io.disproid.receiver
 
 import android.app.Activity
+import android.content.Intent
 import android.graphics.Color
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import android.view.Gravity
 import android.view.SurfaceHolder
@@ -14,6 +17,7 @@ import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.TextView
+import com.google.android.material.button.MaterialButton
 
 /**
  * ミラーリング映像を全画面表示する Activity。
@@ -27,6 +31,10 @@ class MirrorActivity : Activity(), SurfaceHolder.Callback {
     private lateinit var root: FrameLayout
     private lateinit var surfaceView: SurfaceView
     private lateinit var connectingOverlay: View
+    private lateinit var controlsOverlay: View
+
+    private val uiHandler = Handler(Looper.getMainLooper())
+    private val hideControlsRunnable = Runnable { hideControls() }
 
     @Volatile private var videoW = 1920
     @Volatile private var videoH = 1080
@@ -54,6 +62,21 @@ class MirrorActivity : Activity(), SurfaceHolder.Callback {
                 FrameLayout.LayoutParams.MATCH_PARENT
             )
         )
+
+        // 操作オーバーレイ（タップで表示、停止ボタン）
+        controlsOverlay = buildControlsOverlay()
+        controlsOverlay.visibility = View.GONE
+        root.addView(
+            controlsOverlay,
+            FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT
+            )
+        )
+        // 画面タップで操作オーバーレイを表示
+        root.isClickable = true
+        root.setOnClickListener { showControls() }
+
         setContentView(root)
         surfaceView.holder.addCallback(this)
 
@@ -112,6 +135,67 @@ class MirrorActivity : Activity(), SurfaceHolder.Callback {
         return container
     }
 
+    /** 画面タップで出る操作オーバーレイ（半透明スクリム＋停止ボタン）。 */
+    private fun buildControlsOverlay(): View {
+        val scrim = FrameLayout(this).apply {
+            setBackgroundColor(0x99000000.toInt())
+            isClickable = true
+            setOnClickListener { hideControls() } // スクリム外側タップで閉じる
+        }
+        val panel = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            isClickable = true // パネル内タップはスクリムへ伝播させない
+        }
+        val title = TextView(this).apply {
+            text = "ミラーリング中"
+            setTextColor(Color.WHITE)
+            textSize = 20f
+            gravity = Gravity.CENTER
+            setPadding(0, 0, 0, 40)
+        }
+        val stopButton = MaterialButton(this).apply {
+            text = getString(R.string.action_stop)
+            setOnClickListener { stopCasting() }
+        }
+        panel.addView(title)
+        panel.addView(
+            stopButton,
+            LinearLayout.LayoutParams(
+                (220 * resources.displayMetrics.density).toInt(),
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        )
+        scrim.addView(
+            panel,
+            FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                Gravity.CENTER
+            )
+        )
+        return scrim
+    }
+
+    private fun showControls() {
+        controlsOverlay.visibility = View.VISIBLE
+        uiHandler.removeCallbacks(hideControlsRunnable)
+        uiHandler.postDelayed(hideControlsRunnable, 3500) // 数秒で自動的に消える
+    }
+
+    private fun hideControls() {
+        uiHandler.removeCallbacks(hideControlsRunnable)
+        controlsOverlay.visibility = View.GONE
+        hideSystemUi()
+    }
+
+    /** ミラーリングを停止して画面を閉じる。 */
+    private fun stopCasting() {
+        Log.i(TAG, "ユーザー操作でミラーリング停止")
+        stopService(Intent(this, AdvertiseService::class.java))
+        finish()
+    }
+
     /** SurfaceView を映像アスペクト比に合わせて中央配置（歪み防止）。 */
     private fun applyAspect() {
         val cw = root.width
@@ -159,6 +243,7 @@ class MirrorActivity : Activity(), SurfaceHolder.Callback {
     }
 
     override fun onDestroy() {
+        uiHandler.removeCallbacks(hideControlsRunnable)
         decoder.onFirstFrame = null
         NativeBridge.mirrorUiListener = null
         NativeBridge.videoSizeListener = null
