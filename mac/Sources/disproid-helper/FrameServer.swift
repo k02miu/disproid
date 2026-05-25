@@ -28,6 +28,10 @@ final class FrameServer {
         return inFlight >= maxInFlight
     }
 
+    /// クライアント接続/切断の通知（任意のスレッドから呼ばれる）。
+    var onClientConnected: (() -> Void)?
+    var onClientDisconnected: (() -> Void)?
+
     init(port: UInt16, isH265: Bool, width: Int, height: Int) {
         self.port = port
         self.codecByte = isH265 ? 1 : 0
@@ -55,9 +59,15 @@ final class FrameServer {
         connection?.cancel()
         connection = conn
         lock.lock(); inFlight = 0; lock.unlock()
-        conn.stateUpdateHandler = { state in
-            if case .ready = state {
+        conn.stateUpdateHandler = { [weak self] state in
+            switch state {
+            case .ready:
                 FileHandle.standardError.write(Data("[server] client connected\n".utf8))
+                self?.onClientConnected?()
+            case .failed, .cancelled:
+                self?.onClientDisconnected?()
+            default:
+                break
             }
         }
         conn.start(queue: queue)

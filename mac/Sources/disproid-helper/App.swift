@@ -1,0 +1,129 @@
+import SwiftUI
+
+@main
+struct DisproidHelperApp: App {
+    @StateObject private var engine = StreamEngine()
+
+    var body: some Scene {
+        MenuBarExtra("Disproid", systemImage: menuIcon) {
+            ControlView(engine: engine)
+        }
+        .menuBarExtraStyle(.window)
+    }
+
+    private var menuIcon: String {
+        switch engine.state {
+        case .streaming: return "display.and.arrow.down.fill"
+        default: return "display"
+        }
+    }
+}
+
+struct ControlView: View {
+    @ObservedObject var engine: StreamEngine
+
+    private let resolutions: [(String, Int, Int)] = [
+        ("1280 × 720", 1280, 720),
+        ("1920 × 1080", 1920, 1080),
+        ("1920 × 1200", 1920, 1200),
+        ("2560 × 1600", 2560, 1600),
+    ]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                Image(systemName: "display")
+                Text("Disproid Helper").font(.headline)
+            }
+
+            HStack(spacing: 8) {
+                Circle().fill(statusColor).frame(width: 10, height: 10)
+                Text(statusText).font(.subheadline)
+            }
+
+            if engine.state == .streaming, !engine.statsText.isEmpty {
+                Text(engine.statsText)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Divider()
+
+            // 解像度（停止中のみ変更可）
+            Picker("解像度", selection: resolutionBinding) {
+                ForEach(resolutions, id: \.0) { item in
+                    Text(item.0).tag(item.0)
+                }
+            }
+            .disabled(engine.isRunning)
+            .pickerStyle(.menu)
+
+            // 開始/停止
+            if engine.isRunning {
+                Button {
+                    engine.stop()
+                } label: {
+                    Label("停止", systemImage: "stop.fill").frame(maxWidth: .infinity)
+                }
+                .keyboardShortcut(".", modifiers: [.command])
+            } else {
+                Button {
+                    engine.start()
+                } label: {
+                    Label("開始", systemImage: "play.fill").frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+            }
+
+            if case .error(let msg) = engine.state {
+                Text(msg).font(.caption).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
+            }
+
+            Divider()
+
+            Text("タブレットを USB 接続し、アプリで「USB で受信」を押してください。\n（USB デバッグ ON が必要）")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Button("終了") {
+                engine.stop()
+                NSApplication.shared.terminate(nil)
+            }
+            .frame(maxWidth: .infinity)
+        }
+        .padding(16)
+        .frame(width: 280)
+    }
+
+    private var resolutionBinding: Binding<String> {
+        Binding(
+            get: { resolutions.first { $0.1 == engine.width && $0.2 == engine.height }?.0 ?? resolutions[1].0 },
+            set: { label in
+                if let item = resolutions.first(where: { $0.0 == label }) {
+                    engine.width = item.1
+                    engine.height = item.2
+                }
+            }
+        )
+    }
+
+    private var statusText: String {
+        switch engine.state {
+        case .stopped: return "停止中"
+        case .starting: return "起動中…"
+        case .waitingForClient: return "待機中（タブレット接続待ち）"
+        case .streaming: return "ストリーミング中"
+        case .error: return "エラー"
+        }
+    }
+
+    private var statusColor: Color {
+        switch engine.state {
+        case .streaming: return .green
+        case .waitingForClient, .starting: return .orange
+        case .error: return .red
+        case .stopped: return .gray
+        }
+    }
+}
