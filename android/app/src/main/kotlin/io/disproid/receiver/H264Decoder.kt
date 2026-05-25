@@ -13,7 +13,7 @@ import java.util.concurrent.TimeUnit
 /**
  * H.264(Annex-B) を MediaCodec でデコードし Surface へ描画する。
  *
- * Phase D（性能・安定）:
+ * 性能・安定のための設計:
  *  - デコードを専用スレッドに分離し、ネイティブ(mirror RTP)スレッドを塞がない。
  *    onVideoFrame はフレームをコピーして有界キューへ積むだけ（滞留時は最古を破棄＝低遅延維持）。
  *  - 低遅延モード(KEY_LOW_LATENCY/PRIORITY)で glass-to-glass を短縮。

@@ -1,0 +1,98 @@
+client:
+  name: basic
+  file-system: device-agnostic
+tools: {}
+targets:
+  "CGVirtualDisplayInterface-arm64-apple-macosx26.0-debug.module": ["<CGVirtualDisplayInterface-arm64-apple-macosx26.0-debug.module>"]
+  "PackageStructure": ["<PackageStructure>"]
+  "disproid-arm64-apple-macosx26.0-debug.exe": ["<disproid-arm64-apple-macosx26.0-debug.exe>"]
+  "disproid-arm64-apple-macosx26.0-debug.module": ["<disproid-arm64-apple-macosx26.0-debug.module>"]
+  "main": ["<CGVirtualDisplayInterface-arm64-apple-macosx26.0-debug.module>","<disproid-arm64-apple-macosx26.0-debug.exe>","<disproid-arm64-apple-macosx26.0-debug.module>"]
+  "test": ["<CGVirtualDisplayInterface-arm64-apple-macosx26.0-debug.module>","<disproid-arm64-apple-macosx26.0-debug.exe>","<disproid-arm64-apple-macosx26.0-debug.module>"]
+default: "main"
+nodes:
+  "/Users/kamiya/codes/disproid/Sources/CGVirtualDisplayInterface/":
+    is-directory-structure: true
+    content-exclusion-patterns: [".git",".build"]
+  "/Users/kamiya/codes/disproid/Sources/disproid/":
+    is-directory-structure: true
+    content-exclusion-patterns: [".git",".build"]
+  "/Users/kamiya/codes/disproid/.build/arm64-apple-macosx/debug/disproid":
+    is-mutated: true
+commands:
+  "/Users/kamiya/codes/disproid/.build/arm64-apple-macosx/debug/CGVirtualDisplayInterface.build/shim.m.o":
+    tool: clang
+    inputs: ["/Users/kamiya/codes/disproid/Sources/CGVirtualDisplayInterface/shim.m"]
+    outputs: ["/Users/kamiya/codes/disproid/.build/arm64-apple-macosx/debug/CGVirtualDisplayInterface.build/shim.m.o"]
+    description: "Compiling CGVirtualDisplayInterface shim.m"
+    args: ["/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang","-fobjc-arc","-target","arm64-apple-macosx13.0","-O0","-DSWIFT_PACKAGE=1","-DDEBUG=1","-fblocks","-index-store-path","/Users/kamiya/codes/disproid/.build/arm64-apple-macosx/debug/index/store","-fmodules","-fmodule-name=CGVirtualDisplayInterface","-fmodules-cache-path=/Users/kamiya/codes/disproid/.build/arm64-apple-macosx/debug/ModuleCache","-I","/Users/kamiya/codes/disproid/Sources/CGVirtualDisplayInterface/include","-isysroot","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.2.sdk","-F","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks","-F","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/PrivateFrameworks","-fPIC","-g","-MD","-MT","dependencies","-MF","/Users/kamiya/codes/disproid/.build/arm64-apple-macosx/debug/CGVirtualDisplayInterface.build/shim.m.d","-c","/Users/kamiya/codes/disproid/Sources/CGVirtualDisplayInterface/shim.m","-o","/Users/kamiya/codes/disproid/.build/arm64-apple-macosx/debug/CGVirtualDisplayInterface.build/shim.m.o"]
+    deps: "/Users/kamiya/codes/disproid/.build/arm64-apple-macosx/debug/CGVirtualDisplayInterface.build/shim.m.d"
+
+  "/Users/kamiya/codes/disproid/.build/arm64-apple-macosx/debug/disproid-entitlement.plist":
+    tool: write-auxiliary-file
+    inputs: ["<entitlement-plist>","<com.apple.security.get-task-allow>"]
+    outputs: ["/Users/kamiya/codes/disproid/.build/arm64-apple-macosx/debug/disproid-entitlement.plist"]
+    description: "Write auxiliary file /Users/kamiya/codes/disproid/.build/arm64-apple-macosx/debug/disproid-entitlement.plist"
+
+  "/Users/kamiya/codes/disproid/.build/arm64-apple-macosx/debug/disproid.build/sources":
+    tool: write-auxiliary-file
+    inputs: ["<sources-file-list>","/Users/kamiya/codes/disproid/Sources/disproid/Options.swift","/Users/kamiya/codes/disproid/Sources/disproid/VirtualDisplay.swift","/Users/kamiya/codes/disproid/Sources/disproid/main.swift"]
+    outputs: ["/Users/kamiya/codes/disproid/.build/arm64-apple-macosx/debug/disproid.build/sources"]
+    description: "Write auxiliary file /Users/kamiya/codes/disproid/.build/arm64-apple-macosx/debug/disproid.build/sources"
+
+  "/Users/kamiya/codes/disproid/.build/arm64-apple-macosx/debug/disproid.product/Objects.LinkFileList":
+    tool: write-auxiliary-file
+    inputs: ["<link-file-list>","/Users/kamiya/codes/disproid/.build/arm64-apple-macosx/debug/CGVirtualDisplayInterface.build/shim.m.o","/Users/kamiya/codes/disproid/.build/arm64-apple-macosx/debug/disproid.build/Options.swift.o","/Users/kamiya/codes/disproid/.build/arm64-apple-macosx/debug/disproid.build/VirtualDisplay.swift.o","/Users/kamiya/codes/disproid/.build/arm64-apple-macosx/debug/disproid.build/main.swift.o"]
+    outputs: ["/Users/kamiya/codes/disproid/.build/arm64-apple-macosx/debug/disproid.product/Objects.LinkFileList"]
+    description: "Write auxiliary file /Users/kamiya/codes/disproid/.build/arm64-apple-macosx/debug/disproid.product/Objects.LinkFileList"
+
+  "/Users/kamiya/codes/disproid/.build/arm64-apple-macosx/debug/swift-version--58304C5D6DBC2206.txt":
+    tool: write-auxiliary-file
+    inputs: ["<swift-get-version>","/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc"]
+    outputs: ["/Users/kamiya/codes/disproid/.build/arm64-apple-macosx/debug/swift-version--58304C5D6DBC2206.txt"]
+    always-out-of-date: "true"
+    description: "Write auxiliary file /Users/kamiya/codes/disproid/.build/arm64-apple-macosx/debug/swift-version--58304C5D6DBC2206.txt"
+
+  "<CGVirtualDisplayInterface-arm64-apple-macosx26.0-debug.module>":
+    tool: phony
+    inputs: ["/Users/kamiya/codes/disproid/.build/arm64-apple-macosx/debug/CGVirtualDisplayInterface.build/shim.m.o"]
+    outputs: ["<CGVirtualDisplayInterface-arm64-apple-macosx26.0-debug.module>"]
+
+  "<disproid-arm64-apple-macosx26.0-debug.exe>":
+    tool: phony
+    inputs: ["<disproid-arm64-apple-macosx26.0-debug.exe-CodeSigning>"]
+    outputs: ["<disproid-arm64-apple-macosx26.0-debug.exe>"]
+
+  "<disproid-arm64-apple-macosx26.0-debug.module>":
+    tool: phony
+    inputs: ["/Users/kamiya/codes/disproid/.build/arm64-apple-macosx/debug/disproid.build/Options.swift.o","/Users/kamiya/codes/disproid/.build/arm64-apple-macosx/debug/disproid.build/VirtualDisplay.swift.o","/Users/kamiya/codes/disproid/.build/arm64-apple-macosx/debug/disproid.build/main.swift.o","/Users/kamiya/codes/disproid/.build/arm64-apple-macosx/debug/Modules/disproid.swiftmodule"]
+    outputs: ["<disproid-arm64-apple-macosx26.0-debug.module>"]
+
+  "C.disproid-arm64-apple-macosx26.0-debug.exe":
+    tool: shell
+    inputs: ["/Users/kamiya/codes/disproid/.build/arm64-apple-macosx/debug/CGVirtualDisplayInterface.build/shim.m.o","/Users/kamiya/codes/disproid/.build/arm64-apple-macosx/debug/disproid.build/Options.swift.o","/Users/kamiya/codes/disproid/.build/arm64-apple-macosx/debug/disproid.build/VirtualDisplay.swift.o","/Users/kamiya/codes/disproid/.build/arm64-apple-macosx/debug/disproid.build/main.swift.o","/Users/kamiya/codes/disproid/.build/arm64-apple-macosx/debug/disproid.product/Objects.LinkFileList"]
+    outputs: ["/Users/kamiya/codes/disproid/.build/arm64-apple-macosx/debug/disproid"]
+    description: "Linking ./.build/arm64-apple-macosx/debug/disproid"
+    args: ["/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc","-L","/Users/kamiya/codes/disproid/.build/arm64-apple-macosx/debug","-o","/Users/kamiya/codes/disproid/.build/arm64-apple-macosx/debug/disproid","-module-name","disproid","-Xlinker","-no_warn_duplicate_libraries","-emit-executable","-Xlinker","-alias","-Xlinker","_disproid_main","-Xlinker","_main","-Xlinker","-rpath","-Xlinker","@loader_path","@/Users/kamiya/codes/disproid/.build/arm64-apple-macosx/debug/disproid.product/Objects.LinkFileList","-Xlinker","-rpath","-Xlinker","/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift-6.2/macosx","-target","arm64-apple-macosx13.0","-framework","CoreGraphics","-Xlinker","-add_ast_path","-Xlinker","/Users/kamiya/codes/disproid/.build/arm64-apple-macosx/debug/Modules/disproid.swiftmodule","-plugin-path","/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing","-sdk","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.2.sdk","-F","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks","-F","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/PrivateFrameworks","-I","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib","-L","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib","-g"]
+
+  "C.disproid-arm64-apple-macosx26.0-debug.exe-entitlements":
+    tool: shell
+    inputs: ["/Users/kamiya/codes/disproid/.build/arm64-apple-macosx/debug/disproid","/Users/kamiya/codes/disproid/.build/arm64-apple-macosx/debug/disproid-entitlement.plist"]
+    outputs: ["<disproid-arm64-apple-macosx26.0-debug.exe-CodeSigning>"]
+    description: "Applying debug entitlements to ./.build/arm64-apple-macosx/debug/disproid"
+    args: ["codesign","--force","--sign","-","--entitlements","/Users/kamiya/codes/disproid/.build/arm64-apple-macosx/debug/disproid-entitlement.plist","/Users/kamiya/codes/disproid/.build/arm64-apple-macosx/debug/disproid"]
+
+  "C.disproid-arm64-apple-macosx26.0-debug.module":
+    tool: shell
+    inputs: ["/Users/kamiya/codes/disproid/Sources/disproid/Options.swift","/Users/kamiya/codes/disproid/Sources/disproid/VirtualDisplay.swift","/Users/kamiya/codes/disproid/Sources/disproid/main.swift","/Users/kamiya/codes/disproid/.build/arm64-apple-macosx/debug/swift-version--58304C5D6DBC2206.txt","/Users/kamiya/codes/disproid/.build/arm64-apple-macosx/debug/CGVirtualDisplayInterface.build/shim.m.o","/Users/kamiya/codes/disproid/.build/arm64-apple-macosx/debug/disproid.build/sources"]
+    outputs: ["/Users/kamiya/codes/disproid/.build/arm64-apple-macosx/debug/disproid.build/Options.swift.o","/Users/kamiya/codes/disproid/.build/arm64-apple-macosx/debug/disproid.build/VirtualDisplay.swift.o","/Users/kamiya/codes/disproid/.build/arm64-apple-macosx/debug/disproid.build/main.swift.o","/Users/kamiya/codes/disproid/.build/arm64-apple-macosx/debug/Modules/disproid.swiftmodule"]
+    description: "Compiling Swift Module 'disproid' (3 sources)"
+    args: ["/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc","-module-name","disproid","-emit-dependencies","-emit-module","-emit-module-path","/Users/kamiya/codes/disproid/.build/arm64-apple-macosx/debug/Modules/disproid.swiftmodule","-output-file-map","/Users/kamiya/codes/disproid/.build/arm64-apple-macosx/debug/disproid.build/output-file-map.json","-incremental","-c","@/Users/kamiya/codes/disproid/.build/arm64-apple-macosx/debug/disproid.build/sources","-I","/Users/kamiya/codes/disproid/.build/arm64-apple-macosx/debug/Modules","-target","arm64-apple-macosx13.0","-incremental","-enable-batch-mode","-serialize-diagnostics","-index-store-path","/Users/kamiya/codes/disproid/.build/arm64-apple-macosx/debug/index/store","-Onone","-enable-testing","-j12","-DSWIFT_PACKAGE","-DDEBUG","-DSWIFT_MODULE_RESOURCE_BUNDLE_UNAVAILABLE","-Xcc","-fmodule-map-file=/Users/kamiya/codes/disproid/Sources/CGVirtualDisplayInterface/include/module.modulemap","-Xcc","-I","-Xcc","/Users/kamiya/codes/disproid/Sources/CGVirtualDisplayInterface/include","-module-cache-path","/Users/kamiya/codes/disproid/.build/arm64-apple-macosx/debug/ModuleCache","-parseable-output","-Xfrontend","-entry-point-function-name","-Xfrontend","disproid_main","-swift-version","5","-plugin-path","/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing","-sdk","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.2.sdk","-F","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks","-F","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/PrivateFrameworks","-I","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib","-L","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib","-g","-Xcc","-isysroot","-Xcc","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.2.sdk","-Xcc","-F","-Xcc","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks","-Xcc","-F","-Xcc","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/PrivateFrameworks","-Xcc","-fPIC","-Xcc","-g","-package-name","disproid"]
+
+  "PackageStructure":
+    tool: package-structure-tool
+    inputs: ["/Users/kamiya/codes/disproid/Sources/CGVirtualDisplayInterface/","/Users/kamiya/codes/disproid/Sources/disproid/","/Users/kamiya/codes/disproid/Package.swift","/Users/kamiya/codes/disproid/Package.resolved"]
+    outputs: ["<PackageStructure>"]
+    description: "Planning build"
+    allow-missing-inputs: true
+

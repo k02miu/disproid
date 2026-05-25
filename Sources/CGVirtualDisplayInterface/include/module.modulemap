@@ -1,4 +1,0 @@
-module CGVirtualDisplayInterface {
-    header "CGVirtualDisplayInterface.h"
-    export *
-}

@@ -3,7 +3,7 @@ package io.disproid.receiver
 /**
  * UxPlay ベースのネイティブ AirPlay コア（libdisproid.so）への JNI 入口。
  *
- * Phase B: raop(HTTP/RTSP)サーバの起動/停止のみ。映像音声デコードは Phase C。
+ * raop(HTTP/RTSP)サーバの起動/停止と、映像 sink の登録を担う。
  * mDNS 広告自体は Kotlin の NsdManager が担当し、ここは listen ポートと公開鍵を返す。
  */
 object NativeAirPlay {

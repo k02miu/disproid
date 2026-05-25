@@ -18,13 +18,13 @@ import java.io.File
 /**
  * フォアグラウンドサービス。画面オフでも mDNS 公開を継続する。
  *
- * Phase B:
+ * 役割:
  *  1. ネイティブ AirPlay コア（UxPlay 由来 / libdisproid.so）の raop サーバを起動。
  *     接続が来ると RTSP/ペアリングのやり取りが行われ、logcat(TAG=DisproidNative)に出る。
  *  2. NsdManager で `_airplay._tcp` を raop の listen ポートで公開。TXT の pk は
  *     raop が生成した ed25519 公開鍵に揃える。
  *
- * 映像・音声のデコード/表示は Phase C（video_process/audio_process は現状ログのみ）。
+ * 映像は MirrorActivity で表示する。音声は未対応（audio_process は現状ログのみ）。
  */
 class AdvertiseService : Service() {
 

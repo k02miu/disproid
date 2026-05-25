@@ -1,0 +1,324 @@
+{
+  "builtTestProducts" : [
+
+  ],
+  "copyCommands" : {
+
+  },
+  "explicitTargetDependencyImportCheckingMode" : {
+    "none" : {
+
+    }
+  },
+  "generatedSourceTargetSet" : [
+
+  ],
+  "pluginDescriptions" : [
+
+  ],
+  "swiftCommands" : {
+    "C.disproid-arm64-apple-macosx26.0-debug.module" : {
+      "executable" : "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc",
+      "fileList" : "/Users/kamiya/codes/disproid/.build/arm64-apple-macosx/debug/disproid.build/sources",
+      "importPath" : "/Users/kamiya/codes/disproid/.build/arm64-apple-macosx/debug/Modules",
+      "inputs" : [
+        {
+          "kind" : "file",
+          "name" : "/Users/kamiya/codes/disproid/Sources/disproid/Options.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/kamiya/codes/disproid/Sources/disproid/VirtualDisplay.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/kamiya/codes/disproid/Sources/disproid/main.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/kamiya/codes/disproid/.build/arm64-apple-macosx/debug/swift-version--58304C5D6DBC2206.txt"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/kamiya/codes/disproid/.build/arm64-apple-macosx/debug/CGVirtualDisplayInterface.build/shim.m.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/kamiya/codes/disproid/.build/arm64-apple-macosx/debug/disproid.build/sources"
+        }
+      ],
+      "isLibrary" : false,
+      "moduleName" : "disproid",
+      "moduleOutputPath" : "/Users/kamiya/codes/disproid/.build/arm64-apple-macosx/debug/Modules/disproid.swiftmodule",
+      "objects" : [
+        "/Users/kamiya/codes/disproid/.build/arm64-apple-macosx/debug/disproid.build/Options.swift.o",
+        "/Users/kamiya/codes/disproid/.build/arm64-apple-macosx/debug/disproid.build/VirtualDisplay.swift.o",
+        "/Users/kamiya/codes/disproid/.build/arm64-apple-macosx/debug/disproid.build/main.swift.o"
+      ],
+      "otherArguments" : [
+        "-target",
+        "arm64-apple-macosx13.0",
+        "-incremental",
+        "-enable-batch-mode",
+        "-serialize-diagnostics",
+        "-index-store-path",
+        "/Users/kamiya/codes/disproid/.build/arm64-apple-macosx/debug/index/store",
+        "-Onone",
+        "-enable-testing",
+        "-j12",
+        "-DSWIFT_PACKAGE",
+        "-DDEBUG",
+        "-DSWIFT_MODULE_RESOURCE_BUNDLE_UNAVAILABLE",
+        "-Xcc",
+        "-fmodule-map-file=/Users/kamiya/codes/disproid/Sources/CGVirtualDisplayInterface/include/module.modulemap",
+        "-Xcc",
+        "-I",
+        "-Xcc",
+        "/Users/kamiya/codes/disproid/Sources/CGVirtualDisplayInterface/include",
+        "-module-cache-path",
+        "/Users/kamiya/codes/disproid/.build/arm64-apple-macosx/debug/ModuleCache",
+        "-parseable-output",
+        "-Xfrontend",
+        "-entry-point-function-name",
+        "-Xfrontend",
+        "disproid_main",
+        "-swift-version",
+        "5",
+        "-plugin-path",
+        "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing",
+        "-sdk",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.2.sdk",
+        "-F",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+        "-F",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/PrivateFrameworks",
+        "-I",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+        "-L",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+        "-g",
+        "-Xcc",
+        "-isysroot",
+        "-Xcc",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.2.sdk",
+        "-Xcc",
+        "-F",
+        "-Xcc",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+        "-Xcc",
+        "-F",
+        "-Xcc",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/PrivateFrameworks",
+        "-Xcc",
+        "-fPIC",
+        "-Xcc",
+        "-g",
+        "-package-name",
+        "disproid"
+      ],
+      "outputFileMapPath" : "/Users/kamiya/codes/disproid/.build/arm64-apple-macosx/debug/disproid.build/output-file-map.json",
+      "outputs" : [
+        {
+          "kind" : "file",
+          "name" : "/Users/kamiya/codes/disproid/.build/arm64-apple-macosx/debug/disproid.build/Options.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/kamiya/codes/disproid/.build/arm64-apple-macosx/debug/disproid.build/VirtualDisplay.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/kamiya/codes/disproid/.build/arm64-apple-macosx/debug/disproid.build/main.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/kamiya/codes/disproid/.build/arm64-apple-macosx/debug/Modules/disproid.swiftmodule"
+        }
+      ],
+      "prepareForIndexing" : false,
+      "sources" : [
+        "/Users/kamiya/codes/disproid/Sources/disproid/Options.swift",
+        "/Users/kamiya/codes/disproid/Sources/disproid/VirtualDisplay.swift",
+        "/Users/kamiya/codes/disproid/Sources/disproid/main.swift"
+      ],
+      "tempsPath" : "/Users/kamiya/codes/disproid/.build/arm64-apple-macosx/debug/disproid.build",
+      "wholeModuleOptimization" : false
+    }
+  },
+  "swiftFrontendCommands" : {
+
+  },
+  "swiftTargetScanArgs" : {
+    "disproid" : [
+      "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc",
+      "-module-name",
+      "disproid",
+      "-package-name",
+      "disproid",
+      "-c",
+      "/Users/kamiya/codes/disproid/Sources/disproid/Options.swift",
+      "/Users/kamiya/codes/disproid/Sources/disproid/VirtualDisplay.swift",
+      "/Users/kamiya/codes/disproid/Sources/disproid/main.swift",
+      "-I",
+      "/Users/kamiya/codes/disproid/.build/arm64-apple-macosx/debug/Modules",
+      "-target",
+      "arm64-apple-macosx13.0",
+      "-incremental",
+      "-enable-batch-mode",
+      "-serialize-diagnostics",
+      "-index-store-path",
+      "/Users/kamiya/codes/disproid/.build/arm64-apple-macosx/debug/index/store",
+      "-Onone",
+      "-enable-testing",
+      "-j12",
+      "-DSWIFT_PACKAGE",
+      "-DDEBUG",
+      "-DSWIFT_MODULE_RESOURCE_BUNDLE_UNAVAILABLE",
+      "-Xcc",
+      "-fmodule-map-file=/Users/kamiya/codes/disproid/Sources/CGVirtualDisplayInterface/include/module.modulemap",
+      "-Xcc",
+      "-I",
+      "-Xcc",
+      "/Users/kamiya/codes/disproid/Sources/CGVirtualDisplayInterface/include",
+      "-module-cache-path",
+      "/Users/kamiya/codes/disproid/.build/arm64-apple-macosx/debug/ModuleCache",
+      "-parseable-output",
+      "-Xfrontend",
+      "-entry-point-function-name",
+      "-Xfrontend",
+      "disproid_main",
+      "-swift-version",
+      "5",
+      "-plugin-path",
+      "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing",
+      "-sdk",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.2.sdk",
+      "-F",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+      "-F",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/PrivateFrameworks",
+      "-I",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+      "-L",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+      "-g",
+      "-Xcc",
+      "-isysroot",
+      "-Xcc",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.2.sdk",
+      "-Xcc",
+      "-F",
+      "-Xcc",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+      "-Xcc",
+      "-F",
+      "-Xcc",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/PrivateFrameworks",
+      "-Xcc",
+      "-fPIC",
+      "-Xcc",
+      "-g",
+      "-package-name",
+      "disproid",
+      "-driver-use-frontend-path",
+      "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc"
+    ]
+  },
+  "targetDependencyMap" : {
+    "CGVirtualDisplayInterface" : [
+
+    ],
+    "disproid" : [
+      "CGVirtualDisplayInterface"
+    ]
+  },
+  "testDiscoveryCommands" : {
+
+  },
+  "testEntryPointCommands" : {
+
+  },
+  "traitConfiguration" : {
+    "default" : {
+
+    }
+  },
+  "writeCommands" : {
+    "/Users/kamiya/codes/disproid/.build/arm64-apple-macosx/debug/disproid-entitlement.plist" : {
+      "alwaysOutOfDate" : false,
+      "inputs" : [
+        {
+          "kind" : "virtual",
+          "name" : "<entitlement-plist>"
+        },
+        {
+          "kind" : "virtual",
+          "name" : "<com.apple.security.get-task-allow>"
+        }
+      ],
+      "outputFilePath" : "/Users/kamiya/codes/disproid/.build/arm64-apple-macosx/debug/disproid-entitlement.plist"
+    },
+    "/Users/kamiya/codes/disproid/.build/arm64-apple-macosx/debug/disproid.build/sources" : {
+      "alwaysOutOfDate" : false,
+      "inputs" : [
+        {
+          "kind" : "virtual",
+          "name" : "<sources-file-list>"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/kamiya/codes/disproid/Sources/disproid/Options.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/kamiya/codes/disproid/Sources/disproid/VirtualDisplay.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/kamiya/codes/disproid/Sources/disproid/main.swift"
+        }
+      ],
+      "outputFilePath" : "/Users/kamiya/codes/disproid/.build/arm64-apple-macosx/debug/disproid.build/sources"
+    },
+    "/Users/kamiya/codes/disproid/.build/arm64-apple-macosx/debug/disproid.product/Objects.LinkFileList" : {
+      "alwaysOutOfDate" : false,
+      "inputs" : [
+        {
+          "kind" : "virtual",
+          "name" : "<link-file-list>"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/kamiya/codes/disproid/.build/arm64-apple-macosx/debug/CGVirtualDisplayInterface.build/shim.m.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/kamiya/codes/disproid/.build/arm64-apple-macosx/debug/disproid.build/Options.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/kamiya/codes/disproid/.build/arm64-apple-macosx/debug/disproid.build/VirtualDisplay.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/kamiya/codes/disproid/.build/arm64-apple-macosx/debug/disproid.build/main.swift.o"
+        }
+      ],
+      "outputFilePath" : "/Users/kamiya/codes/disproid/.build/arm64-apple-macosx/debug/disproid.product/Objects.LinkFileList"
+    },
+    "/Users/kamiya/codes/disproid/.build/arm64-apple-macosx/debug/swift-version--58304C5D6DBC2206.txt" : {
+      "alwaysOutOfDate" : true,
+      "inputs" : [
+        {
+          "kind" : "virtual",
+          "name" : "<swift-get-version>"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc"
+        }
+      ],
+      "outputFilePath" : "/Users/kamiya/codes/disproid/.build/arm64-apple-macosx/debug/swift-version--58304C5D6DBC2206.txt"
+    }
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "": {
+    "swift-dependencies": "/Users/kamiya/codes/disproid/.build/arm64-apple-macosx/debug/disproid.build/master.swiftdeps"
+  },
+  "/Users/kamiya/codes/disproid/Sources/disproid/Options.swift": {
+    "dependencies": "/Users/kamiya/codes/disproid/.build/arm64-apple-macosx/debug/disproid.build/Options.d",
+    "object": "/Users/kamiya/codes/disproid/.build/arm64-apple-macosx/debug/disproid.build/Options.swift.o",
+    "swiftmodule": "/Users/kamiya/codes/disproid/.build/arm64-apple-macosx/debug/disproid.build/Options~partial.swiftmodule",
+    "swift-dependencies": "/Users/kamiya/codes/disproid/.build/arm64-apple-macosx/debug/disproid.build/Options.swiftdeps",
+    "diagnostics": "/Users/kamiya/codes/disproid/.build/arm64-apple-macosx/debug/disproid.build/Options.dia"
+  },
+  "/Users/kamiya/codes/disproid/Sources/disproid/VirtualDisplay.swift": {
+    "dependencies": "/Users/kamiya/codes/disproid/.build/arm64-apple-macosx/debug/disproid.build/VirtualDisplay.d",
+    "object": "/Users/kamiya/codes/disproid/.build/arm64-apple-macosx/debug/disproid.build/VirtualDisplay.swift.o",
+    "swiftmodule": "/Users/kamiya/codes/disproid/.build/arm64-apple-macosx/debug/disproid.build/VirtualDisplay~partial.swiftmodule",
+    "swift-dependencies": "/Users/kamiya/codes/disproid/.build/arm64-apple-macosx/debug/disproid.build/VirtualDisplay.swiftdeps",
+    "diagnostics": "/Users/kamiya/codes/disproid/.build/arm64-apple-macosx/debug/disproid.build/VirtualDisplay.dia"
+  },
+  "/Users/kamiya/codes/disproid/Sources/disproid/main.swift": {
+    "dependencies": "/Users/kamiya/codes/disproid/.build/arm64-apple-macosx/debug/disproid.build/main.d",
+    "object": "/Users/kamiya/codes/disproid/.build/arm64-apple-macosx/debug/disproid.build/main.swift.o",
+    "swiftmodule": "/Users/kamiya/codes/disproid/.build/arm64-apple-macosx/debug/disproid.build/main~partial.swiftmodule",
+    "swift-dependencies": "/Users/kamiya/codes/disproid/.build/arm64-apple-macosx/debug/disproid.build/main.swiftdeps",
+    "diagnostics": "/Users/kamiya/codes/disproid/.build/arm64-apple-macosx/debug/disproid.build/main.dia"
+  }
+}

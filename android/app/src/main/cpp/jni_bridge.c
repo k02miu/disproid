@@ -1,10 +1,10 @@
 /*
  * JNI ブリッジ: Kotlin <-> UxPlay AirPlay ネイティブコア。
  *
- * Phase B のスコープ:
+ * 役割:
  *  - raop(HTTP/RTSP サーバ)を起動し、接続を受け付けてペアリング/RTSP のやり取りを行う。
  *  - ログは Android logcat(TAG=DisproidNative)へ流す。
- *  - 映像/音声コールバックはログのみ（実デコード・表示は Phase C）。
+ *  - 映像コールバックを Kotlin(VideoSink)へ転送する（音声は未対応＝ログのみ）。
  *
  * 設計:
  *  - ed25519 公開鍵(pk)は raop_init2 が生成し raop->pk_str に入る。
@@ -30,11 +30,11 @@
 /* dnssd_android.c の追加関数（dnssd.h には無い） */
 extern const char *dnssd_get_pk(dnssd_t *dnssd);
 
-/* グローバル状態（単一接続前提の Phase B） */
+/* グローバル状態（単一接続前提） */
 static raop_t *g_raop = NULL;
 static dnssd_t *g_dnssd = NULL;
 
-/* ---- Phase C: 映像フレームの Kotlin への受け渡し ---- */
+/* ---- 映像フレームの Kotlin への受け渡し ---- */
 static JavaVM *g_vm = NULL;
 static jobject g_video_sink = NULL;       /* VideoSink のグローバル参照 */
 static jmethodID g_mid_on_format = NULL;  /* onVideoFormat(II)V */
@@ -72,7 +72,7 @@ static void log_callback(void *cls, int level, const char *msg) {
 }
 
 /* ===== raop_callbacks の実装 ===== */
-/* Phase B: 接続/ペアリングを通すための最小実装。映像音声はログのみ。 */
+/* 接続/ペアリングを通すための実装。音声は未対応（ログのみ）。 */
 
 static void cb_conn_init(void *cls)    { (void) cls; LOGI("conn_init"); }
 static void cb_conn_destroy(void *cls) { (void) cls; LOGI("conn_destroy"); }
@@ -84,7 +84,7 @@ static void cb_conn_teardown(void *cls, bool *teardown_96, bool *teardown_110) {
 
 static void cb_audio_process(void *cls, raop_ntp_t *ntp, audio_decode_struct *data) {
     (void) cls; (void) ntp;
-    LOGI("audio_process: %d bytes (Phase B: 破棄)", data ? data->data_len : 0);
+    LOGI("audio_process: %d bytes (未対応のため破棄)", data ? data->data_len : 0);
 }
 static void cb_video_process(void *cls, raop_ntp_t *ntp, video_decode_struct *data) {
     (void) cls; (void) ntp;
@@ -150,7 +150,7 @@ static void cb_mirror_video_running(void *cls, bool running) {
 static void cb_report_client_request(void *cls, char *deviceid, char *model, char *name, bool *admit) {
     (void) cls;
     LOGI("接続要求: deviceid=%s model=%s name=%s -> 受理", deviceid ? deviceid : "?", model ? model : "?", name ? name : "?");
-    if (admit) *admit = true; /* Phase B: 常に受理 */
+    if (admit) *admit = true; /* 常に受理 */
 }
 static void cb_display_pin(void *cls, char *pin) { (void) cls; LOGI("display_pin=%s", pin ? pin : "?"); }
 static void cb_register_client(void *cls, const char *device_id, const char *pk_str, const char *name) {
@@ -159,7 +159,7 @@ static void cb_register_client(void *cls, const char *device_id, const char *pk_
 }
 static bool cb_check_register(void *cls, const char *pk_str) {
     (void) cls; (void) pk_str;
-    return false; /* Phase B: 未登録扱い -> ペアリングフローへ */
+    return false; /* 未登録扱い -> ペアリングフローへ */
 }
 static const char *cb_passwd(void *cls, int *len) { (void) cls; if (len) *len = 0; return NULL; }
 static void cb_export_dacp(void *cls, const char *ar, const char *id) { (void) cls; (void) ar; (void) id; }

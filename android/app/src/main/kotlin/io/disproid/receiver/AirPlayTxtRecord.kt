@@ -7,7 +7,7 @@ package io.disproid.receiver
  * UxPlay はこのプロジェクトと同一ネットワーク上で `AppleTV3,2` として macOS に Apple TV
  * 種別で列挙される実績がある。観測した on-wire 値とも一致する。
  *
- * Phase A の目的は「macOS の画面ミラーリング一覧に Apple TV として出現すること」であり、
+ * 「macOS の画面ミラーリング一覧に Apple TV として出現すること」が目的であり、
  * model と features ビットが macOS の扱いを左右する核となる。
  */
 object AirPlayTxtRecord {
