@@ -26,8 +26,14 @@ class MainActivity : AppCompatActivity() {
     private lateinit var resolutionDropdown: MaterialAutoCompleteTextView
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        // 起動スプラッシュ（super.onCreate より前に呼ぶ）
-        installSplashScreen()
+        // 起動スプラッシュ（super.onCreate より前に呼ぶ）。
+        // 既定だと一瞬で消えて見えないため、約 800ms 保持して視認できるようにする。
+        val splash = installSplashScreen()
+        var keepSplash = true
+        splash.setKeepOnScreenCondition { keepSplash }
+        android.os.Handler(android.os.Looper.getMainLooper())
+            .postDelayed({ keepSplash = false }, 800)
+
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
