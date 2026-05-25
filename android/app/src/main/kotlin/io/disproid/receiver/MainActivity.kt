@@ -1,35 +1,60 @@
 package io.disproid.receiver
 
 import android.Manifest
-import android.app.Activity
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.content.res.ColorStateList
 import android.os.Build
 import android.os.Bundle
-import android.widget.Button
-import android.widget.TextView
+import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
+import com.google.android.material.appbar.MaterialToolbar
+import com.google.android.material.button.MaterialButton
+import com.google.android.material.textfield.MaterialAutoCompleteTextView
+import android.view.View
 
 /**
- * 最小 UI。公開サービスの開始/停止と状態表示のみ。
+ * 最小 UI（Material 3）。公開サービスの開始/停止、解像度選択、状態表示。
  */
-class MainActivity : Activity() {
+class MainActivity : AppCompatActivity() {
 
-    private lateinit var statusText: TextView
-    private lateinit var startButton: Button
-    private lateinit var stopButton: Button
+    private lateinit var statusText: android.widget.TextView
+    private lateinit var statusDot: View
+    private lateinit var startButton: MaterialButton
+    private lateinit var stopButton: MaterialButton
+    private lateinit var resolutionDropdown: MaterialAutoCompleteTextView
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
+        setSupportActionBar(findViewById<MaterialToolbar>(R.id.toolbar))
+
         statusText = findViewById(R.id.statusText)
+        statusDot = findViewById(R.id.statusDot)
         startButton = findViewById(R.id.startButton)
         stopButton = findViewById(R.id.stopButton)
+        resolutionDropdown = findViewById(R.id.resolutionDropdown)
+
+        setupResolutionDropdown()
 
         startButton.setOnClickListener { startAdvertising() }
         stopButton.setOnClickListener { stopAdvertising() }
 
         maybeRequestNotificationPermission()
+    }
+
+    private fun setupResolutionDropdown() {
+        val labels = ResolutionOptions.list.map { it.label }.toTypedArray()
+        resolutionDropdown.setSimpleItems(labels)
+        val savedIdx = ResolutionOptions.savedIndex(this)
+        resolutionDropdown.setText(labels[savedIdx], false)
+        resolutionDropdown.setOnItemClickListener { _, _, position, _ ->
+            ResolutionOptions.save(this, position)
+            if (StatusBus.running) {
+                statusText.text = "解像度は「停止→公開を開始」で反映されます"
+            }
+        }
     }
 
     override fun onResume() {
@@ -46,6 +71,9 @@ class MainActivity : Activity() {
         statusText.text = status
         startButton.isEnabled = !running
         stopButton.isEnabled = running
+        val dotColor = if (running) R.color.status_active else R.color.status_idle
+        statusDot.backgroundTintList =
+            ColorStateList.valueOf(ContextCompat.getColor(this, dotColor))
     }
 
     private fun startAdvertising() {

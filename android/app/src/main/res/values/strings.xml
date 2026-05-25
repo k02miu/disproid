@@ -1,7 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Disproid Receiver</string>
+    <string name="app_tagline">Mac のワイヤレス拡張ディスプレイ</string>
     <!-- mDNS で公開するサービス名（Mac の画面ミラーリング一覧に出る表示名）。
          model=AppleTV3,2 により Apple TV 種別として扱われる想定。 -->
     <string name="service_display_name">Disproid Receiver</string>
+
+    <string name="status_idle">停止中</string>
+    <string name="resolution_label">解像度</string>
+    <string name="action_start">公開を開始</string>
+    <string name="action_stop">停止</string>
+    <string name="mirror_connecting">接続を待っています…</string>
 </resources>

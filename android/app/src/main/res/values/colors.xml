@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- ブランドカラー（ディスプレイ/テック寄りの青） -->
+    <color name="brand_primary">#3D5AFE</color>
+    <color name="brand_on_primary">#FFFFFF</color>
+    <color name="brand_primary_container">#DDE1FF</color>
+    <color name="brand_on_primary_container">#001257</color>
+
+    <!-- 状態インジケータ -->
+    <color name="status_idle">#9E9E9E</color>
+    <color name="status_active">#00C853</color>
+</resources>

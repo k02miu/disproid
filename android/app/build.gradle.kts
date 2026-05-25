@@ -58,6 +58,8 @@ android {
 }
 
 dependencies {
-    // 外部依存ゼロ: AndroidX/Compose/Material を使わず、フレームワーク API のみで実装する。
-    // （NsdManager / app.Service / app.Activity / java.net.ServerSocket）
+    // UI は Material 3 を使用（見栄え重視）。コア機能(NsdManager/Service/JNI)は引き続き
+    // フレームワーク API のみ。
+    implementation("androidx.appcompat:appcompat:1.7.0")
+    implementation("com.google.android.material:material:1.12.0")
 }
