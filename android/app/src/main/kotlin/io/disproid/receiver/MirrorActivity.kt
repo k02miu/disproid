@@ -11,6 +11,9 @@ import android.view.SurfaceView
 import android.view.View
 import android.view.WindowManager
 import android.widget.FrameLayout
+import android.widget.LinearLayout
+import android.widget.ProgressBar
+import android.widget.TextView
 
 /**
  * ミラーリング映像を全画面表示する Activity。
@@ -23,6 +26,7 @@ class MirrorActivity : Activity(), SurfaceHolder.Callback {
     private val decoder = H264Decoder()
     private lateinit var root: FrameLayout
     private lateinit var surfaceView: SurfaceView
+    private lateinit var connectingOverlay: View
 
     @Volatile private var videoW = 1920
     @Volatile private var videoH = 1080
@@ -42,8 +46,21 @@ class MirrorActivity : Activity(), SurfaceHolder.Callback {
                 Gravity.CENTER
             )
         )
+        connectingOverlay = buildConnectingOverlay()
+        root.addView(
+            connectingOverlay,
+            FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT
+            )
+        )
         setContentView(root)
         surfaceView.holder.addCallback(this)
+
+        // 最初のフレームが描画されたら接続待ち表示を消す
+        decoder.onFirstFrame = {
+            runOnUiThread { connectingOverlay.visibility = View.GONE }
+        }
 
         hideSystemUi()
 
@@ -68,6 +85,31 @@ class MirrorActivity : Activity(), SurfaceHolder.Callback {
                 finish()
             }
         }
+    }
+
+    /** 接続待ち（最初のフレームが来るまで）の中央オーバーレイ。 */
+    private fun buildConnectingOverlay(): View {
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            setBackgroundColor(Color.BLACK)
+        }
+        val spinner = ProgressBar(this).apply {
+            isIndeterminate = true
+        }
+        val label = TextView(this).apply {
+            text = getString(R.string.mirror_connecting)
+            setTextColor(Color.WHITE)
+            textSize = 16f
+            gravity = Gravity.CENTER
+            setPadding(0, 48, 0, 0)
+        }
+        container.addView(
+            spinner,
+            LinearLayout.LayoutParams(120, 120)
+        )
+        container.addView(label)
+        return container
     }
 
     /** SurfaceView を映像アスペクト比に合わせて中央配置（歪み防止）。 */
@@ -117,6 +159,7 @@ class MirrorActivity : Activity(), SurfaceHolder.Callback {
     }
 
     override fun onDestroy() {
+        decoder.onFirstFrame = null
         NativeBridge.mirrorUiListener = null
         NativeBridge.videoSizeListener = null
         if (NativeBridge.frameSink === decoder) {

@@ -109,7 +109,8 @@ class AdvertiseService : Service() {
         }
     }
 
-    /** タブレットの実ディスプレイ解像度(landscape の長辺=width)とリフレッシュレートを返す。 */
+    /** Mac に報告する解像度(landscape)とリフレッシュレートを返す。
+     *  設定で固定解像度が選ばれていればそれを、「自動」ならタブレット実アスペクト比から算出。 */
     private fun displayInfo(): Triple<Int, Int, Int> {
         val wm = getSystemService(Context.WINDOW_SERVICE) as android.view.WindowManager
         var w = 1920
@@ -131,13 +132,17 @@ class AdvertiseService : Service() {
         } catch (e: Throwable) {
             Log.w(TAG, "ディスプレイ情報取得失敗、既定値を使用", e)
         }
-        // landscape（長辺を width に）の実アスペクト比を保ちつつ、
-        // macOS が受理しやすいよう width=1920 基準の標準的な解像度へ正規化する。
-        // （生のパネル解像度をそのまま報告すると AppleTV5,3 が受け付けず映像が止まるため）
+
+        val opt = ResolutionOptions.saved(this)
+        if (opt.width > 0 && opt.height > 0) {
+            // 固定解像度を選択
+            return Triple(opt.width, opt.height, hz)
+        }
+        // 自動: landscape の実アスペクト比を保ち、width=1920 基準へ正規化（偶数化）
         val pw = maxOf(w, h)
         val ph = minOf(w, h)
         val targetW = 1920
-        val targetH = (targetW.toLong() * ph / pw).toInt().let { it - (it % 2) } // 偶数化
+        val targetH = (targetW.toLong() * ph / pw).toInt().let { it - (it % 2) }
         return Triple(targetW, targetH, hz)
     }
 
@@ -240,7 +245,7 @@ class AdvertiseService : Service() {
         val notification: Notification = Notification.Builder(this, CHANNEL_ID)
             .setContentTitle("Disproid Receiver")
             .setContentText("Apple TV として公開中（タップでミラー表示）")
-            .setSmallIcon(android.R.drawable.stat_sys_data_bluetooth)
+            .setSmallIcon(R.drawable.ic_stat_cast)
             .setContentIntent(openMirror)
             .addAction(Notification.Action.Builder(null, "停止", stopPending).build())
             .setOngoing(true)

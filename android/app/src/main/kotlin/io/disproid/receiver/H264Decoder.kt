@@ -40,6 +40,10 @@ class H264Decoder : VideoSink {
     @Volatile private var pendingReconfigure = false
     @Volatile private var needFlush = false
 
+    /** 最初のフレームを描画した瞬間に1度だけ呼ばれる（接続待ち表示を消す用）。 */
+    @Volatile var onFirstFrame: (() -> Unit)? = null
+    @Volatile private var firstFrameDone = false
+
     // ---- VideoSink（ネイティブスレッドから） ----
 
     override fun onVideoFormat(width: Int, height: Int) {
@@ -166,6 +170,10 @@ class H264Decoder : VideoSink {
         var idx = c.dequeueOutputBuffer(info, 0)
         while (idx >= 0) {
             c.releaseOutputBuffer(idx, true) // render=true で Surface へ即描画
+            if (!firstFrameDone) {
+                firstFrameDone = true
+                onFirstFrame?.invoke()
+            }
             idx = c.dequeueOutputBuffer(info, 0)
         }
     }
