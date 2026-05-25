@@ -12,28 +12,24 @@ import android.net.nsd.NsdServiceInfo
 import android.os.Build
 import android.os.IBinder
 import android.util.Log
-import java.io.IOException
-import java.net.ServerSocket
-import java.net.Socket
-import kotlin.concurrent.thread
+import java.io.File
 
 /**
  * フォアグラウンドサービス。画面オフでも mDNS 公開を継続する。
  *
- * 役割（Phase A）:
- *  1. TCP サーバを listen（接続が来てもログのみ。プロトコル処理は次フェーズ）
- *  2. NsdManager で `_airplay._tcp` を上記ポートで公開し、TXT に Apple TV 識別属性を載せる
+ * Phase B:
+ *  1. ネイティブ AirPlay コア（UxPlay 由来 / libdisproid.so）の raop サーバを起動。
+ *     接続が来ると RTSP/ペアリングのやり取りが行われ、logcat(TAG=DisproidNative)に出る。
+ *  2. NsdManager で `_airplay._tcp` を raop の listen ポートで公開。TXT の pk は
+ *     raop が生成した ed25519 公開鍵に揃える。
  *
- * ペアリング・暗号・映像は一切扱わない。
+ * 映像・音声のデコード/表示は Phase C（video_process/audio_process は現状ログのみ）。
  */
 class AdvertiseService : Service() {
 
-    private var serverSocket: ServerSocket? = null
-    private var serverThread: Thread? = null
-    @Volatile private var acceptRunning = false
-
     private var nsdManager: NsdManager? = null
     private var registrationListener: NsdManager.RegistrationListener? = null
+    @Volatile private var nativeStarted = false
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -43,16 +39,28 @@ class AdvertiseService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (acceptRunning) {
-            // 二重起動を無視
+        if (nativeStarted) {
             return START_STICKY
         }
         try {
-            val port = startTcpServer()
-            registerService(port)
-        } catch (e: Exception) {
+            val identity = DeviceIdentity.load(this)
+            val keyfile = File(filesDir, "airplay_ed25519.key").absolutePath
+            val name = getString(R.string.service_display_name)
+
+            // ネイティブ raop サーバ起動 → listen ポート取得
+            val port = NativeAirPlay.nativeStart(identity.deviceId, name, keyfile)
+            if (port < 0) {
+                throw IllegalStateException("nativeStart 失敗 (code=$port)")
+            }
+            nativeStarted = true
+            val pk = NativeAirPlay.nativeGetPublicKey()
+            Log.i(TAG, "ネイティブ raop 起動 port=$port pk=$pk")
+
+            registerService(port, identity, pk)
+        } catch (e: Throwable) {
             Log.e(TAG, "起動に失敗", e)
             StatusBus.update(running = false, status = "起動失敗: ${e.message}")
+            stopNative()
             stopSelf()
         }
         return START_STICKY
@@ -60,7 +68,7 @@ class AdvertiseService : Service() {
 
     override fun onDestroy() {
         unregisterService()
-        stopTcpServer()
+        stopNative()
         StatusBus.update(running = false, status = "停止中")
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
             stopForeground(STOP_FOREGROUND_REMOVE)
@@ -71,61 +79,26 @@ class AdvertiseService : Service() {
         super.onDestroy()
     }
 
-    // ---- TCP スタブサーバ ----
-
-    /** TCP サーバを起動し、listen しているポート番号を返す。 */
-    private fun startTcpServer(): Int {
-        // 慣例の AirPlay ポート 7000 を試し、ダメなら ephemeral ポートに委ねる。
-        val socket = try {
-            ServerSocket(AIRPLAY_DEFAULT_PORT)
-        } catch (e: IOException) {
-            Log.w(TAG, "ポート $AIRPLAY_DEFAULT_PORT を確保できず ephemeral ポートを使用", e)
-            ServerSocket(0)
-        }
-        serverSocket = socket
-        acceptRunning = true
-
-        serverThread = thread(name = "disproid-tcp-accept") {
-            Log.i(TAG, "TCP listen 開始 port=${socket.localPort}")
-            while (acceptRunning && !socket.isClosed) {
-                val client: Socket = try {
-                    socket.accept()
-                } catch (e: IOException) {
-                    if (acceptRunning) Log.w(TAG, "accept エラー", e)
-                    break
-                }
-                // Phase A: 何もしない。接続元をログに残して即クローズ（スタブ）。
-                Log.i(TAG, "接続を受信: ${client.inetAddress?.hostAddress}:${client.port}（スタブのため何もしない）")
-                try {
-                    client.close()
-                } catch (_: IOException) {
-                }
+    private fun stopNative() {
+        if (nativeStarted) {
+            try {
+                NativeAirPlay.nativeStop()
+            } catch (e: Throwable) {
+                Log.w(TAG, "nativeStop 失敗", e)
             }
-            Log.i(TAG, "TCP accept ループ終了")
+            nativeStarted = false
         }
-        return socket.localPort
-    }
-
-    private fun stopTcpServer() {
-        acceptRunning = false
-        try {
-            serverSocket?.close()
-        } catch (_: IOException) {
-        }
-        serverSocket = null
-        serverThread = null
     }
 
     // ---- mDNS (NsdManager) ----
 
-    private fun registerService(port: Int) {
-        val identity = DeviceIdentity.load(this)
+    private fun registerService(port: Int, identity: DeviceIdentity, pk: String) {
         val info = NsdServiceInfo().apply {
             serviceName = getString(R.string.service_display_name)
             serviceType = AirPlayTxtRecord.SERVICE_TYPE
             setPort(port)
-            // TXT レコード（Apple TV 識別属性）
-            AirPlayTxtRecord.build(identity).forEach { (k, v) ->
+            // TXT の pk は raop の公開鍵に揃える（GET /info と一致させる）
+            AirPlayTxtRecord.build(identity, pkOverride = pk).forEach { (k, v) ->
                 setAttribute(k, v)
             }
         }
@@ -208,7 +181,5 @@ class AdvertiseService : Service() {
         private const val TAG = "DisproidReceiver"
         private const val CHANNEL_ID = "disproid_advertise"
         private const val NOTIF_ID = 1
-        // AirPlay の慣例ポート。確保できなければ ephemeral にフォールバック。
-        private const val AIRPLAY_DEFAULT_PORT = 7000
     }
 }

@@ -19,10 +19,11 @@ object AirPlayTxtRecord {
     const val MODEL = "AppleTV3,2"
 
     /**
-     * features ビットマスク（lo,hi の 2 ワード）。UxPlay 観測値（legacy pairing bit OFF）。
-     * 各ビットが対応機能（音声/映像/画面ミラー等）を表す。要検証: 拡張表示に必須のビット構成。
+     * features ビットマスク（lo,hi の 2 ワード）。
+     * ネイティブコアの dnssdint.h FEATURES_1/_2 と一致させる（bit27=legacy pairing ON）。
+     * これにより mDNS 広告と GET /info の features が一致する。要検証: 拡張表示に必須のビット構成。
      */
-    const val FEATURES = "0x527FFEE6,0x0"
+    const val FEATURES = "0x5A7FFEE6,0x0"
 
     /** AirPlay ソースバージョン（UxPlay GLOBAL_VERSION）。要検証: 拡張が legacy srcvers=220.68 で通るか。 */
     const val SRCVERS = "220.68"
@@ -38,16 +39,17 @@ object AirPlayTxtRecord {
 
     /**
      * TXT レコードのキー/値マップを構築する。
-     * 端末固有値（deviceid/pi/pk）は [DeviceIdentity] から渡す。
+     * 端末固有値（deviceid/pi）は [DeviceIdentity] から、pk はネイティブ raop が生成した
+     * 公開鍵を渡す（GET /info の pk と一致させるため）。pkOverride が空なら identity.pk。
      */
-    fun build(identity: DeviceIdentity): Map<String, String> = linkedMapOf(
+    fun build(identity: DeviceIdentity, pkOverride: String? = null): Map<String, String> = linkedMapOf(
         "deviceid" to identity.deviceId,
         "features" to FEATURES,
         "flags" to FLAGS,
         "model" to MODEL,
         "pw" to PW,
         "pi" to identity.pi,
-        "pk" to identity.pk,
+        "pk" to (pkOverride?.takeIf { it.isNotEmpty() } ?: identity.pk),
         "srcvers" to SRCVERS,
         "vv" to VV,
     )
