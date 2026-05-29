@@ -118,6 +118,34 @@ class MirrorActivity : Activity(), SurfaceHolder.Callback {
         }
     }
 
+    /** USB 受信を開始する（停滞検知時/エラー時の再接続でも使う）。 */
+    private fun startUsbReceiver() {
+        if (isFinishing) return
+        usbReceiver?.stop()
+        decoder.requestFlush()  // 前接続の状態を持ち越さない（再接続直後の誤停滞検知を防ぐ）
+        // 再接続中は接続待ち表示を再表示
+        connectingOverlay.visibility = View.VISIBLE
+        val (dw, dh) = deviceLandscapeSize()
+        val receiver = UsbVideoReceiver(
+            sink = decoder,
+            onFormat = { w, h -> onUsbFormat(w, h) },
+            deviceWidth = dw,
+            deviceHeight = dh,
+            onError = { msg ->
+                runOnUiThread {
+                    if (!isFinishing) {
+                        // 接続が切れた時は Activity を閉じず、短い間隔で自動再接続。
+                        // adb forward の再確立を待つだけなので間隔は短くてよい（復帰高速化）。
+                        Log.w(TAG, "USB 受信エラー: $msg → 再接続")
+                        uiHandler.postDelayed({ if (!isFinishing) startUsbReceiver() }, RECONNECT_DELAY_MS)
+                    }
+                }
+            }
+        )
+        usbReceiver = receiver
+        receiver.start()
+    }
+
     /** タブレットの実画面解像度を landscape（長辺=幅）で返す。 */
     private fun deviceLandscapeSize(): Pair<Int, Int> {
         var w = 1920
@@ -152,23 +180,16 @@ class MirrorActivity : Activity(), SurfaceHolder.Callback {
         val container = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
-            setBackgroundColor(Color.BLACK)
+            // 背景は塗らない。再接続時に直前のフレームを覆って暗転・チカチカするのを防ぎ、
+            // 画面中央にスピナーだけを重ねる（初回は root が黒なので黒地に表示される）。
         }
         val spinner = ProgressBar(this).apply {
             isIndeterminate = true
-        }
-        val label = TextView(this).apply {
-            text = getString(R.string.mirror_connecting)
-            setTextColor(Color.WHITE)
-            textSize = 16f
-            gravity = Gravity.CENTER
-            setPadding(0, 48, 0, 0)
         }
         container.addView(
             spinner,
             LinearLayout.LayoutParams(120, 120)
         )
-        container.addView(label)
         return container
     }
 
@@ -271,24 +292,9 @@ class MirrorActivity : Activity(), SurfaceHolder.Callback {
         decoder.onVideoFormat(videoW, videoH)
         decoder.setSurface(holder.surface)
         if (usbMode) {
-            // USB: localhost に接続して受信開始。フレームはデコーダへ直接流す。
-            val (dw, dh) = deviceLandscapeSize()
-            val receiver = UsbVideoReceiver(
-                sink = decoder,
-                onFormat = { w, h -> onUsbFormat(w, h) },
-                deviceWidth = dw,
-                deviceHeight = dh,
-                onError = { msg ->
-                    runOnUiThread {
-                        if (!isFinishing) {
-                            android.widget.Toast.makeText(this, "USB 接続失敗: $msg", android.widget.Toast.LENGTH_LONG).show()
-                            finish()
-                        }
-                    }
-                }
-            )
-            usbReceiver = receiver
-            receiver.start()
+            // 停滞時はデコーダが自己リセットし Mac の定期 IDR で復帰する（再接続はしない）。
+            // 接続が切れた時のみ UsbVideoReceiver.onError 経由で startUsbReceiver する。
+            startUsbReceiver()
         } else {
             NativeBridge.frameSink = decoder
         }
@@ -345,5 +351,7 @@ class MirrorActivity : Activity(), SurfaceHolder.Callback {
         private const val TAG = "DisproidReceiver"
         /** USB(adb) 受信モードで起動する Intent extra。 */
         const val EXTRA_USB = "io.disproid.receiver.USB_MODE"
+        /** 切断検知から再接続を試みるまでの待ち(ms)。短いほど復帰が速い。 */
+        private const val RECONNECT_DELAY_MS = 150L
     }
 }

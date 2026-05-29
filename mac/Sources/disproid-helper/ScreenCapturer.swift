@@ -28,8 +28,19 @@ final class ScreenCapturer: NSObject, SCStreamDelegate, SCStreamOutput {
     }
 
     func start() async throws {
-        let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
-        guard let scDisplay = content.displays.first(where: { $0.displayID == targetDisplayID }) else {
+        // 仮想ディスプレイの作成は macOS への登録が非同期なため、作り直した直後は
+        // SCShareableContent にまだ現れないことがある（高速な再接続で多発）。
+        // 対象 displayID が見えるまで短くリトライしてから確定させる。
+        var scDisplay: SCDisplay?
+        for _ in 0..<15 {
+            let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
+            if let d = content.displays.first(where: { $0.displayID == targetDisplayID }) {
+                scDisplay = d
+                break
+            }
+            try? await Task.sleep(nanoseconds: 200_000_000) // 200ms 待って取り直す
+        }
+        guard let scDisplay = scDisplay else {
             throw NSError(domain: "ScreenCapturer", code: -1,
                           userInfo: [NSLocalizedDescriptionKey: "対象ディスプレイ(\(targetDisplayID))が見つからない"])
         }
