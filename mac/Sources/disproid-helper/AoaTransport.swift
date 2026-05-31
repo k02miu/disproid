@@ -34,6 +34,7 @@ final class AoaTransport: VideoTransport {
     private let maxInFlight = 2
     private var headerSent = false
     private var running = false
+    private var connected = false
     private var disconnectedNotified = false
 
     init(isH265: Bool) {
@@ -49,11 +50,12 @@ final class AoaTransport: VideoTransport {
 
     func start() throws {
         running = true
-        ioQueue.async { [weak self] in self?.setup() }
+        ioQueue.async { [weak self] in self?.establishLoop() }
     }
 
     func stop() {
         running = false
+        connected = false
         ioQueue.sync {}  // 進行中の送信完了を待つ
         closeUSB()
     }
@@ -91,34 +93,44 @@ final class AoaTransport: VideoTransport {
         }
     }
 
-    // MARK: - セットアップ（setupQueue 上）
+    // MARK: - 接続確立（ioQueue 上）
 
-    private func setup() {
-        guard running else { return }
+    /// 接続を確立する。確立できるまで(while running) バックオフ付きでリトライする。
+    /// 切断時(handleDisconnect)からも再呼び出しされ、端末の抜き差し/再遷移を吸収して自動復帰する。
+    private func establishLoop() {
+        guard running, !connected else { return }
+        while running && !connected {
+            if establishOnce() {
+                connected = true
+                lock.lock(); disconnectedNotified = false; lock.unlock()
+                return
+            }
+            Thread.sleep(forTimeInterval: 0.5) // バックオフ（抜き差し・再遷移待ち）
+        }
+    }
+
+    /// 1 回ぶんの確立: 検出→accessory遷移→interface/パイプ→DPRQ→onClientResolution。成功で true。
+    private func establishOnce() -> Bool {
+        closeUSB()
+        lock.lock(); headerSent = false; inFlight = 0; lock.unlock()
         do {
             // 1. accessory モードへ（既に accessory なら遷移をスキップ）
             if !AoaUSB.accessoryPresent() {
-                guard let cand = AoaUSB.findAndroidCandidate() else {
-                    log("AOA: Android 端末が見つからない")
-                    notifyDisconnected(); return
-                }
+                guard let cand = AoaUSB.findAndroidCandidate() else { return false }
                 try AoaUSB.switchToAccessory(cand.service)
                 IOObjectRelease(cand.service)
                 var ok = false
                 for _ in 0..<50 { Thread.sleep(forTimeInterval: 0.1); if AoaUSB.accessoryPresent() { ok = true; break } }
-                guard ok else { log("AOA: accessory 遷移を検出できない"); notifyDisconnected(); return }
+                guard ok else { return false }
             }
-            log("AOA: accessory モード。インターフェースを確保…")
 
             // 2. accessory インターフェース + バルクパイプ
             var ifaceSvc: io_service_t = 0
-            for _ in 0..<100 { if let s = AoaUSB.findAccessoryInterface() { ifaceSvc = s; break }; Thread.sleep(forTimeInterval: 0.1) }
-            guard ifaceSvc != 0 else { log("AOA: accessory interface が無い"); notifyDisconnected(); return }
+            for _ in 0..<50 { if let s = AoaUSB.findAccessoryInterface() { ifaceSvc = s; break }; Thread.sleep(forTimeInterval: 0.1) }
+            guard ifaceSvc != 0 else { return false }
             let iface = try IOUSBHostInterface(__ioService: ifaceSvc, options: [], queue: nil, interestHandler: nil)
             IOObjectRelease(ifaceSvc)
-            guard let (inAddr, outAddr) = AoaUSB.findBulkEndpoints(iface) else {
-                log("AOA: バルク EP が無い"); notifyDisconnected(); return
-            }
+            guard let (inAddr, outAddr) = AoaUSB.findBulkEndpoints(iface) else { return false }
             let outP = try iface.copyPipe(withAddress: outAddr)
             let inP = try iface.copyPipe(withAddress: inAddr)
             self.interface = iface
@@ -127,13 +139,23 @@ final class AoaTransport: VideoTransport {
             log("AOA: バルク確立 IN=\(String(format:"0x%02X",inAddr)) OUT=\(String(format:"0x%02X",outAddr))")
 
             // 3. DPRQ(12B) を読む（Android アプリ起動→FD オープン→送信を待つ）
-            guard let (w, h) = readDPRQ(inP) else { log("AOA: DPRQ 読み取り失敗"); notifyDisconnected(); return }
+            guard let (w, h) = readDPRQ(inP) else { return false }
             log("AOA: DPRQ 受信 \(w)x\(h)")
             onClientResolution?(w, h)
+            return true
         } catch {
-            log("AOA: セットアップ失敗: \(error)")
-            notifyDisconnected()
+            log("AOA: 確立失敗: \(error.localizedDescription)")
+            return false
         }
+    }
+
+    /// 切断検知（バルク送信失敗）。パイプを畳んで再確立ループへ。
+    private func handleDisconnect() {
+        guard running, connected else { return }
+        connected = false
+        closeUSB()
+        notifyDisconnected()  // StreamEngine は waitingForClient（パイプライン維持）
+        ioQueue.async { [weak self] in self?.establishLoop() }
     }
 
     /// DPRQ(4)+w(4,BE)+h(4,BE)=12B を読む。Android 起動待ちのため長めにリトライ。
@@ -166,8 +188,8 @@ final class AoaTransport: VideoTransport {
             try pipe.__sendIORequest(with: m, bytesTransferred: &sent, completionTimeout: 2.0)
         } catch {
             let ns = error as NSError
-            if running { log("AOA: バルク送信失敗: \(ns.domain) code=\(ns.code) (\(ns.localizedDescription)) → 切断") }
-            notifyDisconnected()
+            if running && connected { log("AOA: バルク送信失敗: \(ns.domain) code=\(ns.code) (\(ns.localizedDescription)) → 再接続") }
+            handleDisconnect()
         }
     }
 

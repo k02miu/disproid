@@ -39,6 +39,7 @@
         <activity
             android:name=".MirrorActivity"
             android:exported="true"
+            android:launchMode="singleTop"
             android:screenOrientation="sensorLandscape"
             android:configChanges="orientation|screenSize|keyboardHidden"
             android:theme="@style/Theme.Disproid.Mirror">

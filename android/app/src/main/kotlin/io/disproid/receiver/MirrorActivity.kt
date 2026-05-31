@@ -41,6 +41,8 @@ class MirrorActivity : Activity(), SurfaceHolder.Callback {
     private val hideControlsRunnable = Runnable { hideControls() }
     /** 画面サイズ変化(回転・起動時settle)を debounce して Mac へ再通知する。 */
     private val renotifyRunnable = Runnable { renotifyIfSizeChanged() }
+    /** AOA 受信の再接続リトライ。 */
+    private val aoaRetryRunnable = Runnable { if (!isFinishing && aoaMode) startAoaReceiver() }
 
     /** true: USB 受信モード(adb or AOA) / false: AirPlay 受信モード */
     private var usbMode = false
@@ -151,6 +153,20 @@ class MirrorActivity : Activity(), SurfaceHolder.Callback {
         }
     }
 
+    /** AOA: 端末が再 attach（Mac が再遷移）すると新しい accessory intent が届く。受信を再開する。 */
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        val acc = intent.getParcelableExtra<UsbAccessory>(UsbManager.EXTRA_ACCESSORY)
+        if (acc != null) {
+            Log.i(TAG, "新しい accessory 接続を検知 → AOA 受信を再開")
+            aoaAccessory = acc
+            aoaMode = true
+            uiHandler.removeCallbacks(aoaRetryRunnable)
+            startAoaReceiver()
+        }
+    }
+
     /** USB 受信を開始する（停滞検知時/エラー時の再接続でも使う）。 */
     private fun startUsbReceiver() {
         if (isFinishing) return
@@ -180,17 +196,34 @@ class MirrorActivity : Activity(), SurfaceHolder.Callback {
         receiver.start()
     }
 
-    /** AOA(直接USB) 受信を開始する。accessory を開いて AoaVideoReceiver を回す。 */
+    /** AOA(直接USB) 受信を開始/再開する。accessory を開いて AoaVideoReceiver を回す。
+     *  切断時は画面を閉じず、接続待ち表示にして再接続をリトライする。 */
     private fun startAoaReceiver() {
         if (isFinishing) return
-        val accessory = aoaAccessory
-        if (accessory == null) { Log.e(TAG, "AOA accessory が無い"); finish(); return }
         aoaReceiver?.stop()
         decoder.requestFlush()
         connectingOverlay.visibility = View.VISIBLE
         val mgr = getSystemService(USB_SERVICE) as UsbManager
-        val pfd = mgr.openAccessory(accessory)
-        if (pfd == null) { Log.e(TAG, "openAccessory 失敗（権限未許可の可能性）"); finish(); return }
+        // accessory が抜けていると accessoryList が空。再 attach（onNewIntent）か復帰までリトライ。
+        val accessory = aoaAccessory ?: mgr.accessoryList?.firstOrNull()
+        if (accessory == null) {
+            Log.w(TAG, "AOA accessory 未検出 → 再試行待ち")
+            scheduleAoaRetry(); return
+        }
+        aoaAccessory = accessory
+        // openAccessory は accessory が抜けていると null ではなく例外を投げる
+        // (IllegalArgumentException: no accessory attached)。catch して再試行する。
+        val pfd = try {
+            mgr.openAccessory(accessory)
+        } catch (e: Exception) {
+            Log.w(TAG, "openAccessory 例外: ${e.message} → 再試行")
+            aoaAccessory = null  // スタブを破棄して次回は accessoryList から取り直す
+            null
+        }
+        if (pfd == null) {
+            Log.w(TAG, "openAccessory 失敗 → 再試行")
+            scheduleAoaRetry(); return
+        }
         val (dw, dh) = deviceCurrentSize()
         lastNotifiedSize = Pair(dw, dh)
         val receiver = AoaVideoReceiver(
@@ -202,15 +235,22 @@ class MirrorActivity : Activity(), SurfaceHolder.Callback {
             onError = { msg ->
                 runOnUiThread {
                     if (!isFinishing) {
-                        // AOA は単一接続。切断時はいったん画面を閉じる（再接続は accessory 再 attach で）。
-                        Log.w(TAG, "AOA 受信エラー: $msg → 終了")
-                        finish()
+                        Log.w(TAG, "AOA 受信エラー: $msg → 再接続")
+                        connectingOverlay.visibility = View.VISIBLE
+                        scheduleAoaRetry()
                     }
                 }
             }
         )
         aoaReceiver = receiver
         receiver.start()
+    }
+
+    /** AOA 受信の再接続を debounce して再試行する。 */
+    private fun scheduleAoaRetry() {
+        if (isFinishing || !aoaMode) return
+        uiHandler.removeCallbacks(aoaRetryRunnable)
+        uiHandler.postDelayed(aoaRetryRunnable, AOA_RETRY_MS)
     }
 
     /** 画面サイズ変化を debounce して再通知する（回転中の連続レイアウトを1回に畳む）。 */
@@ -415,6 +455,7 @@ class MirrorActivity : Activity(), SurfaceHolder.Callback {
     override fun onDestroy() {
         uiHandler.removeCallbacks(hideControlsRunnable)
         uiHandler.removeCallbacks(renotifyRunnable)
+        uiHandler.removeCallbacks(aoaRetryRunnable)
         usbReceiver?.stop()
         usbReceiver = null
         aoaReceiver?.stop()
@@ -458,5 +499,7 @@ class MirrorActivity : Activity(), SurfaceHolder.Callback {
         private const val RECONNECT_DELAY_MS = 150L
         /** 画面サイズ変化の再通知 debounce(ms)。回転アニメ中の連続レイアウトを1回に畳む。 */
         private const val RENOTIFY_DEBOUNCE_MS = 250L
+        /** AOA 受信の再接続リトライ間隔(ms)。抜き差し/再遷移を待つので少し長め。 */
+        private const val AOA_RETRY_MS = 700L
     }
 }
