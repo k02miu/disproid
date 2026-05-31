@@ -14,13 +14,6 @@ let package = Package(
             name: "CGVirtualDisplayInterface"
         ),
         .executableTarget(
-            name: "aoaprobe",
-            linkerSettings: [
-                .linkedFramework("IOKit"),
-                .linkedFramework("IOUSBHost")
-            ]
-        ),
-        .executableTarget(
             name: "disproid-helper",
             dependencies: ["CGVirtualDisplayInterface"],
             resources: [

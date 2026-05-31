@@ -37,9 +37,10 @@ adb スタックを介さず IOUSBHost で直接 USB バルク通信する。継
 
 - 遷移: 候補端末に AOA 制御転送 `51`(GET_PROTOCOL)/`52`(識別文字列)/`53`(START) を送り、
   端末を `0x18D1/0x2D0x`(accessory[+adb]) に再列挙させる。accessory interface(255/255/0) のバルク IN/OUT を使う。
-- 検証ツール `Sources/aoaprobe/`（`swift run aoaprobe`）で遷移・バルク往復を単体確認できる。
-- 既知の制限: 配信中の回転リビルド未対応（ハンドシェイク1回）、切断時の自動再接続未対応、
-  accessory-only(`0x2D00`/USB デバッグ OFF)端末は未検証。
+- 切断(バルク送信失敗)時は `establishLoop` が再確立をリトライして自動復帰する。
+- 検証済み: 多機種(TCL / Samsung)、**USB デバッグ OFF の `0x2D00`(accessory-only)**、抜き差し再接続。
+- 既知の制限: 配信中の回転リビルドは未対応（起動時の向きで固定。仕様上不要のため非対応）。
+  複数 Android 同時接続時は最初に見つかった対応端末を採用（警告ログあり）。
 
 ## 必要なもの
 
@@ -80,5 +81,4 @@ open "Disproid Helper.app"       # メニューバーに常駐
 - 音声送信（Android 側 AudioTrack とセット）
 - 実画面ミラー（仮想ディスプレイではなく既存ディスプレイ）モードの選択
 - ビットレート/解像度の動的調整、H.265 オプション
-- AOA: 配信中の回転リビルド（再ハンドシェイク）、切断時の自動再接続、accessory-only 端末の検証
-- AOA: PoC ツール `aoaprobe` の整理（本実装が固まり次第）
+- AOA: 複数 Android 同時接続時の端末選択 UI（現状は自動選択）、スループット/遅延の計測と非同期バルク化の検討

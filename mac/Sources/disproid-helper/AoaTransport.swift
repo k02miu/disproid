@@ -263,12 +263,27 @@ enum AoaUSB {
         return false
     }
 
+    /// io_service_t の文字列プロパティ。
+    static func strProp(_ svc: io_service_t, _ key: String) -> String? {
+        IORegistryEntryCreateCFProperty(svc, key as CFString, kCFAllocatorDefault, 0)?.takeRetainedValue() as? String
+    }
+
+    /// ログ用ラベル "名前(0xVID/0xPID)"。
+    static func deviceLabel(_ svc: io_service_t) -> String {
+        let name = strProp(svc, "USB Product Name") ?? strProp(svc, "kUSBProductString") ?? "?"
+        let vid = intProp(svc, "idVendor") ?? 0
+        let pid = intProp(svc, "idProduct") ?? 0
+        return "\(name)(0x\(String(vid, radix: 16))/0x\(String(pid, radix: 16)))"
+    }
+
     /// Android 候補(非Apple・非ハブ・複合デバイス class0)を探し AOA 対応を確認する。
+    /// 複数の AOA 対応端末が見つかった場合は最初の 1 台を採用し、警告を出す。
     static func findAndroidCandidate() -> (service: io_service_t, version: UInt16)? {
         guard let m = IOServiceMatching("IOUSBHostDevice") as NSMutableDictionary? else { return nil }
         var iter: io_iterator_t = 0
         guard IOServiceGetMatchingServices(kIOMainPortDefault, m, &iter) == KERN_SUCCESS else { return nil }
         defer { IOObjectRelease(iter) }
+        var matches: [(service: io_service_t, version: UInt16, label: String)] = []
         while case let svc = IOIteratorNext(iter), svc != 0 {
             let vid = intProp(svc, "idVendor") ?? 0
             let cls = intProp(svc, "bDeviceClass") ?? -1
@@ -276,11 +291,20 @@ enum AoaUSB {
             if vid == 0x05AC || cls == 9 || cls != 0 { IOObjectRelease(svc); continue }
             if let dev = try? IOUSBHostDevice(__ioService: svc, options: [], queue: nil, interestHandler: nil),
                let ver = try? getProtocol(dev), ver >= 1 {
-                return (svc, ver)  // svc は呼び出し側で release
+                matches.append((svc, ver, deviceLabel(svc)))
+            } else {
+                IOObjectRelease(svc)
             }
-            IOObjectRelease(svc)
         }
-        return nil
+        guard let chosen = matches.first else { return nil }
+        if matches.count > 1 {
+            let others = matches.dropFirst().map { $0.label }.joined(separator: ", ")
+            log("AOA: 複数の対応端末を検出。\(chosen.label) を使用（他: \(others)）")
+        } else {
+            log("AOA: 対応端末 \(chosen.label) を検出")
+        }
+        for m in matches.dropFirst() { IOObjectRelease(m.service) }  // 不採用分を解放
+        return (chosen.service, chosen.version)
     }
 
     static func getProtocol(_ device: IOUSBHostDevice) throws -> UInt16 {
