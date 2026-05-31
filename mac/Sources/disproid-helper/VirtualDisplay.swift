@@ -12,6 +12,14 @@ final class VirtualDisplay {
     let displayID: CGDirectDisplayID
     let options: Options
 
+    /// 作成毎にユニークな EDID serialNum を採番するためのカウンタ。
+    /// 起動毎に乱数を基点にし、生成のたびに増やす。下の説明を参照。
+    private static var serialSeed: UInt32 = UInt32.random(in: 1...0x7FFF_FFFF)
+    private static func nextSerial() -> UInt32 {
+        serialSeed &+= 1
+        return serialSeed
+    }
+
     init(options: Options) {
         self.options = options
         self.callbackQueue = DispatchQueue(label: "io.disproid.virtualdisplay.callback")
@@ -35,10 +43,17 @@ final class VirtualDisplay {
         descriptor.maxPixelsWide = options.width
         descriptor.maxPixelsHigh = options.height
 
-        // 任意の識別子。実機の他ディスプレイと衝突しない適当な値。
+        // EDID 識別子。
+        // 重要: macOS は仮想ディスプレイを EDID identity(vendorID/productID/serialNum)で
+        // 同定し、その identity ごとに「最後に使った解像度」をシステム設定に永続保存する。
+        // 一度ある identity が誤った解像度(例: 1344x1008)で記録されると、以後その identity で
+        // 仮想ディスプレイを作っても要求モード(縦 1440x2200 など)が無視され、記録値に固着する。
+        // これがタブレットを縦にしても横のまま(上下黒帯)になる真因だった。
+        // 対策: 作成毎に serialNum を変え、常に「新品の未知ディスプレイ」として登録する。
+        // こうすれば過去に汚染された identity を二度と踏まず、要求モードが確実に適用される。
         descriptor.vendorID = 0x1AF1   // "disproid" 由来の任意値
         descriptor.productID = 0x0001
-        descriptor.serialNum = 0x0001
+        descriptor.serialNum = Self.nextSerial()
 
         // sRGB 相当の色域プライマリ。EDID として妥当な値を入れておく。
         descriptor.redPrimary   = CGPoint(x: 0.640, y: 0.330)
