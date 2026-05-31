@@ -36,7 +36,9 @@ final class StreamEngine: ObservableObject {
     private let isH265 = false
 
     private var virtualDisplay: VirtualDisplay?
-    private var server: FrameServer?
+    private var server: VideoTransport?
+    /// true: AOA(直接USB) を使用中 / false: adb reverse 経由。adb 固有処理の出し分けに使う。
+    private var usingAoa = false
     private var encoder: VideoEncoder?
     private var capturer: ScreenCapturer?
     private var statTimer: DispatchSourceTimer?
@@ -79,7 +81,14 @@ final class StreamEngine: ObservableObject {
         effectiveBitrateMbps = bitrateMbps
         lastDisconnect = nil
 
-        let srv = FrameServer(port: hostPort, isH265: isH265)
+        // transport 選択: AOA(直接USB) 対応端末があれば優先。無ければ adb reverse にフォールバック。
+        // AOA は adb スタック非依存で継続的 USB OUT の切断(kIOReturnNotResponding)を回避でき、
+        // USB デバッグも不要になる。
+        usingAoa = AoaUSB.androidAvailable()
+        let srv: VideoTransport = usingAoa
+            ? AoaTransport(isH265: isH265)
+            : FrameServer(port: hostPort, isH265: isH265)
+        FileHandle.standardError.write(Data("[engine] transport = \(usingAoa ? "AOA(直接USB)" : "adb reverse")\n".utf8))
         srv.onClientResolution = { [weak self] w, h in
             Task { @MainActor in await self?.handleClientResolution(w, h) }
         }
@@ -93,11 +102,13 @@ final class StreamEngine: ObservableObject {
             return
         }
         server = srv
-        AdbBridge.reverse(devicePort: devicePort, hostPort: hostPort)
         startStatsTimer()
-        // USB トランスポートが落ちる(kIOReturnNotResponding)と reverse も消えるため、
-        // keepalive で復旧する（消えている時だけ張り直す）。
-        startReverseKeepAlive()
+        if !usingAoa {
+            AdbBridge.reverse(devicePort: devicePort, hostPort: hostPort)
+            // USB トランスポートが落ちる(kIOReturnNotResponding)と reverse も消えるため、
+            // keepalive で復旧する（消えている時だけ張り直す）。adb 経路のみ必要。
+            startReverseKeepAlive()
+        }
         setState(.waitingForClient)
     }
 
@@ -110,7 +121,7 @@ final class StreamEngine: ObservableObject {
         reverseKeepAliveTimer?.cancel(); reverseKeepAliveTimer = nil
         teardownPipeline()
         server?.stop(); server = nil
-        AdbBridge.removeReverse(devicePort: devicePort)
+        if !usingAoa { AdbBridge.removeReverse(devicePort: devicePort) }
         statsText = ""
         activeResolution = ""
         setState(.stopped)
@@ -122,7 +133,9 @@ final class StreamEngine: ObservableObject {
     private func handleClientResolution(_ w: Int, _ h: Int) async {
         guard isRunning else { return }
 
-        // 目標解像度: 自動ならタブレット通知値、固定なら GUI 指定。偶数化。
+        // 目標解像度: 自動ならタブレット通知値ぴったり(帯なし)、固定なら GUI 指定値をそのまま使う。
+        // 固定は「帯が出てもよいので任意の解像度で使いたい」ケース向けなので向き補正はしない
+        // (タブレットのアスペクト比と違えばタブレット側で letterbox/pillarbox 表示になる)。
         let tw = (autoResolution ? w : width).evenized
         let th = (autoResolution ? h : height).evenized
         guard tw > 0, th > 0 else {

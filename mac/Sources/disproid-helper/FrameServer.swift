@@ -8,7 +8,7 @@ import Network
 ///   1. クライアント→サーバ: "DPRQ"(4) + width(4,BE) + height(4,BE)  … タブレットの画面解像度
 ///   2. サーバ→クライアント(ヘッダ14B): "DPRD"(4) + version(1) + codec(1) + width(4,BE) + height(4,BE)
 ///   3. 以降くり返し: length(4,BE) + Annex-B アクセスユニット
-final class FrameServer {
+final class FrameServer: VideoTransport {
 
     private let port: UInt16
     private let codecByte: UInt8
