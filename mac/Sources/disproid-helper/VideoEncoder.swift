@@ -27,6 +27,9 @@ final class VideoEncoder {
     var onEncoded: ((Data, _ isKeyframe: Bool) -> Void)?
 
     private var bitrate: Int
+    /// 次の1フレームをキーフレーム(IDR)として強制するフラグ（再接続時の即時復帰用）。
+    /// 単純フラグのため厳密な排他はしない（最悪キーフレームが1フレーム遅れるだけ）。
+    private var forceKeyframe = false
 
     init(width: Int, height: Int, codec: Codec, bitrate: Int = 20_000_000) {
         self.width = Int32(width)
@@ -84,20 +87,36 @@ final class VideoEncoder {
 
     private func applyBitrate(_ session: VTCompressionSession, _ bps: Int) {
         VTSessionSetProperty(session, key: kVTCompressionPropertyKey_AverageBitRate, value: bps as CFNumber)
-        // 瞬間スパイクを抑えて遅延の暴れを防ぐ（1秒あたり平均の約1.5倍を上限）。
+        // 瞬間スパイクが adb reverse トンネルを溢れさせ RST(Connection reset by peer)を
+        // 誘発するため、データレート上限を厳しめ＋短いウィンドウでピークを抑える。
+        // 1秒窓=平均の1.2倍、0.25秒窓=平均の1.6倍相当（瞬間ピーク抑制）。
         let bytesPerSec = bps / 8
-        let limits: [Any] = [(bytesPerSec * 3 / 2) as CFNumber, 1 as CFNumber]
+        let limits: [Any] = [
+            NSNumber(value: bytesPerSec * 6 / 5), NSNumber(value: 1.0),
+            NSNumber(value: bytesPerSec * 2 / 5), NSNumber(value: 0.25),
+        ]
         VTSessionSetProperty(session, key: kVTCompressionPropertyKey_DataRateLimits, value: limits as CFArray)
+    }
+
+    /// 次の1フレームをキーフレーム(IDR)として強制エンコードする。
+    /// タブレットの再接続時に呼び、パイプラインを作り直さずに即復帰させる。
+    func requestKeyframe() {
+        forceKeyframe = true
     }
 
     func encode(_ imageBuffer: CVImageBuffer, pts: CMTime) {
         guard let session = session else { return }
+        var frameProperties: CFDictionary?
+        if forceKeyframe {
+            forceKeyframe = false
+            frameProperties = [kVTEncodeFrameOptionKey_ForceKeyFrame: kCFBooleanTrue] as CFDictionary
+        }
         VTCompressionSessionEncodeFrame(
             session,
             imageBuffer: imageBuffer,
             presentationTimeStamp: pts,
             duration: .invalid,
-            frameProperties: nil,
+            frameProperties: frameProperties,
             infoFlagsOut: nil
         ) { [weak self] status, _, sampleBuffer in
             guard status == noErr, let sampleBuffer = sampleBuffer else { return }

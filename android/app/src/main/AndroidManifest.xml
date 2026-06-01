@@ -34,13 +34,22 @@
             </intent-filter>
         </activity>
 
-        <!-- ミラーリング映像の全画面表示。Mac の画面は横向き想定。 -->
+        <!-- ミラーリング映像の全画面表示。Mac の画面は横向き想定。
+             AOA(USB Accessory) 接続時はこの Activity が accessory intent で直接起動される。 -->
         <activity
             android:name=".MirrorActivity"
-            android:exported="false"
+            android:exported="true"
+            android:launchMode="singleTop"
             android:screenOrientation="sensorLandscape"
             android:configChanges="orientation|screenSize|keyboardHidden"
-            android:theme="@style/Theme.Disproid.Mirror" />
+            android:theme="@style/Theme.Disproid.Mirror">
+            <intent-filter>
+                <action android:name="android.hardware.usb.action.USB_ACCESSORY_ATTACHED" />
+            </intent-filter>
+            <meta-data
+                android:name="android.hardware.usb.action.USB_ACCESSORY_ATTACHED"
+                android:resource="@xml/accessory_filter" />
+        </activity>
 
         <service
             android:name=".AdvertiseService"

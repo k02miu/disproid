@@ -5,6 +5,11 @@ import Foundation
 /// （Android アプリは localhost:devicePort へ接続すれば Mac の FrameServer に届く）
 enum AdbBridge {
 
+    /// Android 側 abstract socket 名（UsbVideoReceiver と一致させる）。
+    /// tcp ループバックではなく abstract Unix domain socket を使う（scrcpy と同じ方式で
+    /// 端末側 TCP スタックを経由させず adb トランスポートを安定させる狙い）。
+    static let abstractName = "disproid"
+
     /// adb の実行パスを探す。
     static func adbPath() -> String? {
         let candidates: [String] = {
@@ -34,16 +39,40 @@ enum AdbBridge {
             FileHandle.standardError.write(Data("[adb] adb が見つかりません（ANDROID_HOME/PATH を確認）\n".utf8))
             return false
         }
-        let ok = run(adb, ["reverse", "tcp:\(devicePort)", "tcp:\(hostPort)"])
+        let ok = run(adb, ["reverse", "localabstract:\(abstractName)", "tcp:\(hostPort)"])
         if ok {
-            FileHandle.standardError.write(Data("[adb] reverse tcp:\(devicePort) -> 127.0.0.1:\(hostPort) 設定\n".utf8))
+            FileHandle.standardError.write(Data("[adb] reverse localabstract:\(abstractName) -> 127.0.0.1:\(hostPort) 設定\n".utf8))
         }
         return ok
     }
 
     static func removeReverse(devicePort: UInt16) {
         guard let adb = adbPath() else { return }
-        _ = run(adb, ["reverse", "--remove", "tcp:\(devicePort)"])
+        _ = run(adb, ["reverse", "--remove", "localabstract:\(abstractName)"])
+    }
+
+    /// 指定ポートの reverse トンネルが既に張られているか。
+    /// （reverse の再設定は進行中の接続を切るため、張り直す前の確認に使う）
+    static func isReversed(devicePort: UInt16) -> Bool {
+        guard let adb = adbPath() else { return false }
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: adb)
+        p.arguments = ["reverse", "--list"]
+        let pipe = Pipe()
+        p.standardOutput = pipe
+        p.standardError = FileHandle.nullDevice
+        do {
+            try p.run()
+            p.waitUntilExit()
+            // コマンドが失敗(adb: no devices 等)した時は状態不明。張り直すと進行中の
+            // 接続を切る恐れがあるため「張られている」とみなして触らない（安全側）。
+            guard p.terminationStatus == 0 else { return true }
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            let out = String(decoding: data, as: UTF8.self)
+            return out.contains("localabstract:\(abstractName)")
+        } catch {
+            return true
+        }
     }
 
     // MARK: - helpers

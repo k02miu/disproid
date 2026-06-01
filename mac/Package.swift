@@ -24,7 +24,9 @@ let package = Package(
                 .linkedFramework("ScreenCaptureKit"),
                 .linkedFramework("VideoToolbox"),
                 .linkedFramework("CoreMedia"),
-                .linkedFramework("CoreVideo")
+                .linkedFramework("CoreVideo"),
+                .linkedFramework("IOKit"),
+                .linkedFramework("IOUSBHost")
             ]
         )
     ]

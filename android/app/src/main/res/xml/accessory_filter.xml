@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  AOA(Android Open Accessory) フィルタ。
+  Mac ヘルパーが AOA 識別文字列で送る manufacturer/model と一致させる。
+  一致するとシステムが USB_ACCESSORY_ATTACHED でアプリを起動/権限付与する。
+-->
+<resources>
+    <usb-accessory manufacturer="Disproid" model="Disproid Display" />
+</resources>

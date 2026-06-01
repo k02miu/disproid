@@ -2,7 +2,11 @@ package io.disproid.receiver
 
 import android.app.Activity
 import android.content.Intent
+import android.content.pm.ActivityInfo
+import android.content.res.Configuration
 import android.graphics.Color
+import android.hardware.usb.UsbAccessory
+import android.hardware.usb.UsbManager
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
@@ -35,18 +39,38 @@ class MirrorActivity : Activity(), SurfaceHolder.Callback {
 
     private val uiHandler = Handler(Looper.getMainLooper())
     private val hideControlsRunnable = Runnable { hideControls() }
+    /** 画面サイズ変化(回転・起動時settle)を debounce して Mac へ再通知する。 */
+    private val renotifyRunnable = Runnable { renotifyIfSizeChanged() }
+    /** AOA 受信の再接続リトライ。 */
+    private val aoaRetryRunnable = Runnable { if (!isFinishing && aoaMode) startAoaReceiver() }
 
-    /** true: USB(adb) 受信モード / false: AirPlay 受信モード */
+    /** true: USB 受信モード(adb or AOA) / false: AirPlay 受信モード */
     private var usbMode = false
     private var usbReceiver: UsbVideoReceiver? = null
+
+    /** true: AOA(直接USB) 受信。accessory intent から起動された場合。 */
+    private var aoaMode = false
+    private var aoaAccessory: UsbAccessory? = null
+    private var aoaReceiver: AoaVideoReceiver? = null
 
     @Volatile private var videoW = 1920
     @Volatile private var videoH = 1080
 
+    /** 直近に Mac へ通知した解像度。向き変更を検知して再通知するのに使う。 */
+    private var lastNotifiedSize: Pair<Int, Int>? = null
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        usbMode = intent.getBooleanExtra(EXTRA_USB, false)
+        // AOA: accessory intent から起動されたか判定（USB_ACCESSORY_ATTACHED または EXTRA_ACCESSORY）。
+        aoaAccessory = intent.getParcelableExtra(UsbManager.EXTRA_ACCESSORY)
+        aoaMode = aoaAccessory != null || intent.action == UsbManager.ACTION_USB_ACCESSORY_ATTACHED
+        usbMode = aoaMode || intent.getBooleanExtra(EXTRA_USB, false)
+        if (usbMode) {
+            // USB モードはシステムの向き設定に追従する（自動回転 ON ならセンサー、
+            // 縦/横に固定していればその向き）。縦固定なら縦の拡張ディスプレイになる。
+            requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_FULL_USER
+        }
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
         root = FrameLayout(this).apply { setBackgroundColor(Color.BLACK) }
@@ -81,6 +105,17 @@ class MirrorActivity : Activity(), SurfaceHolder.Callback {
         // 画面タップで操作オーバーレイを表示
         root.isClickable = true
         root.setOnClickListener { showControls() }
+
+        // 実画面サイズの変化(回転・起動時の向き確定・マルチウィンドウ等)を監視する。
+        // surfaceCreated 時の一度きりの読み取りだと、起動直後に向きが確定する前(横)を
+        // 拾って Mac に横の仮想ディスプレイを作らせてしまう。レイアウト確定値を常時見て、
+        // サイズが変われば再レターボックス＋Mac へ再通知する(縦↔横の追従)。
+        root.addOnLayoutChangeListener { _, l, t, r, b, ol, ot, oR, ob ->
+            if ((r - l) != (oR - ol) || (b - t) != (ob - ot)) {
+                applyAspect()
+                scheduleRenotify()
+            }
+        }
 
         setContentView(root)
         surfaceView.holder.addCallback(this)
@@ -118,8 +153,127 @@ class MirrorActivity : Activity(), SurfaceHolder.Callback {
         }
     }
 
-    /** タブレットの実画面解像度を landscape（長辺=幅）で返す。 */
-    private fun deviceLandscapeSize(): Pair<Int, Int> {
+    /** AOA: 端末が再 attach（Mac が再遷移）すると新しい accessory intent が届く。受信を再開する。 */
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        val acc = intent.getParcelableExtra<UsbAccessory>(UsbManager.EXTRA_ACCESSORY)
+        if (acc != null) {
+            Log.i(TAG, "新しい accessory 接続を検知 → AOA 受信を再開")
+            aoaAccessory = acc
+            aoaMode = true
+            uiHandler.removeCallbacks(aoaRetryRunnable)
+            startAoaReceiver()
+        }
+    }
+
+    /** USB 受信を開始する（停滞検知時/エラー時の再接続でも使う）。 */
+    private fun startUsbReceiver() {
+        if (isFinishing) return
+        usbReceiver?.stop()
+        decoder.requestFlush()  // 前接続の状態を持ち越さない（再接続直後の誤停滞検知を防ぐ）
+        // 再接続中は接続待ち表示を再表示
+        connectingOverlay.visibility = View.VISIBLE
+        val (dw, dh) = deviceCurrentSize()
+        lastNotifiedSize = Pair(dw, dh)
+        val receiver = UsbVideoReceiver(
+            sink = decoder,
+            onFormat = { w, h -> onUsbFormat(w, h) },
+            deviceWidth = dw,
+            deviceHeight = dh,
+            onError = { msg ->
+                runOnUiThread {
+                    if (!isFinishing) {
+                        // 接続が切れた時は Activity を閉じず、短い間隔で自動再接続。
+                        // adb forward の再確立を待つだけなので間隔は短くてよい（復帰高速化）。
+                        Log.w(TAG, "USB 受信エラー: $msg → 再接続")
+                        uiHandler.postDelayed({ if (!isFinishing) startUsbReceiver() }, RECONNECT_DELAY_MS)
+                    }
+                }
+            }
+        )
+        usbReceiver = receiver
+        receiver.start()
+    }
+
+    /** AOA(直接USB) 受信を開始/再開する。accessory を開いて AoaVideoReceiver を回す。
+     *  切断時は画面を閉じず、接続待ち表示にして再接続をリトライする。 */
+    private fun startAoaReceiver() {
+        if (isFinishing) return
+        aoaReceiver?.stop()
+        decoder.requestFlush()
+        connectingOverlay.visibility = View.VISIBLE
+        val mgr = getSystemService(USB_SERVICE) as UsbManager
+        // accessory が抜けていると accessoryList が空。再 attach（onNewIntent）か復帰までリトライ。
+        val accessory = aoaAccessory ?: mgr.accessoryList?.firstOrNull()
+        if (accessory == null) {
+            Log.w(TAG, "AOA accessory 未検出 → 再試行待ち")
+            scheduleAoaRetry(); return
+        }
+        aoaAccessory = accessory
+        // openAccessory は accessory が抜けていると null ではなく例外を投げる
+        // (IllegalArgumentException: no accessory attached)。catch して再試行する。
+        val pfd = try {
+            mgr.openAccessory(accessory)
+        } catch (e: Exception) {
+            Log.w(TAG, "openAccessory 例外: ${e.message} → 再試行")
+            aoaAccessory = null  // スタブを破棄して次回は accessoryList から取り直す
+            null
+        }
+        if (pfd == null) {
+            Log.w(TAG, "openAccessory 失敗 → 再試行")
+            scheduleAoaRetry(); return
+        }
+        val (dw, dh) = deviceCurrentSize()
+        lastNotifiedSize = Pair(dw, dh)
+        val receiver = AoaVideoReceiver(
+            fd = pfd,
+            sink = decoder,
+            onFormat = { w, h -> onUsbFormat(w, h) },
+            deviceWidth = dw,
+            deviceHeight = dh,
+            onError = { msg ->
+                runOnUiThread {
+                    if (!isFinishing) {
+                        Log.w(TAG, "AOA 受信エラー: $msg → 再接続")
+                        connectingOverlay.visibility = View.VISIBLE
+                        scheduleAoaRetry()
+                    }
+                }
+            }
+        )
+        aoaReceiver = receiver
+        receiver.start()
+    }
+
+    /** AOA 受信の再接続を debounce して再試行する。 */
+    private fun scheduleAoaRetry() {
+        if (isFinishing || !aoaMode) return
+        uiHandler.removeCallbacks(aoaRetryRunnable)
+        uiHandler.postDelayed(aoaRetryRunnable, AOA_RETRY_MS)
+    }
+
+    /** 画面サイズ変化を debounce して再通知する（回転中の連続レイアウトを1回に畳む）。 */
+    private fun scheduleRenotify() {
+        // TODO(AOA): AOA は現状ハンドシェイク1回のみのため回転リビルド未対応。
+        // adb 経路(usbMode かつ非AOA)でのみ回転に追従して再通知する。
+        if (!usbMode || aoaMode) return
+        uiHandler.removeCallbacks(renotifyRunnable)
+        uiHandler.postDelayed(renotifyRunnable, RENOTIFY_DEBOUNCE_MS)
+    }
+
+    /** 現在の実画面サイズが前回通知と変わっていれば、再接続して Mac へ通知する。 */
+    private fun renotifyIfSizeChanged() {
+        if (!usbMode || isFinishing) return
+        val size = deviceCurrentSize()
+        if (size != lastNotifiedSize) {
+            Log.i(TAG, "画面サイズ変化: ${size.first}x${size.second} → 再接続して解像度を通知")
+            startUsbReceiver()
+        }
+    }
+
+    /** タブレットの現在の向きの実画面解像度を返す（縦持ちなら w<h、横持ちなら w>h）。 */
+    private fun deviceCurrentSize(): Pair<Int, Int> {
         var w = 1920
         var h = 1080
         try {
@@ -133,7 +287,7 @@ class MirrorActivity : Activity(), SurfaceHolder.Callback {
                 w = dm.widthPixels; h = dm.heightPixels
             }
         } catch (_: Throwable) {}
-        return Pair(maxOf(w, h), minOf(w, h))
+        return Pair(w, h)  // 向きそのまま（Mac はこの比率で仮想ディスプレイを作る）
     }
 
     /** USB 受信時の映像サイズ通知でアスペクト比を更新（メインスレッドへ）。 */
@@ -152,23 +306,16 @@ class MirrorActivity : Activity(), SurfaceHolder.Callback {
         val container = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
-            setBackgroundColor(Color.BLACK)
+            // 背景は塗らない。再接続時に直前のフレームを覆って暗転・チカチカするのを防ぎ、
+            // 画面中央にスピナーだけを重ねる（初回は root が黒なので黒地に表示される）。
         }
         val spinner = ProgressBar(this).apply {
             isIndeterminate = true
-        }
-        val label = TextView(this).apply {
-            text = getString(R.string.mirror_connecting)
-            setTextColor(Color.WHITE)
-            textSize = 16f
-            gravity = Gravity.CENTER
-            setPadding(0, 48, 0, 0)
         }
         container.addView(
             spinner,
             LinearLayout.LayoutParams(120, 120)
         )
-        container.addView(label)
         return container
     }
 
@@ -231,6 +378,7 @@ class MirrorActivity : Activity(), SurfaceHolder.Callback {
         Log.i(TAG, "ユーザー操作でミラーリング停止")
         if (usbMode) {
             usbReceiver?.stop()
+            aoaReceiver?.stop()
         } else {
             stopService(Intent(this, AdvertiseService::class.java))
         }
@@ -266,29 +414,25 @@ class MirrorActivity : Activity(), SurfaceHolder.Callback {
         hideSystemUi()
     }
 
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        hideSystemUi()
+        // 向きが変わったら新しい解像度を Mac に通知し、縦/横の仮想ディスプレイに作り直してもらう。
+        // 実際の再通知はレイアウト確定後の値で行うため debounce 経由にする
+        // (この時点では currentWindowMetrics が更新前のことがある)。
+        scheduleRenotify()
+    }
+
     override fun surfaceCreated(holder: SurfaceHolder) {
         Log.i(TAG, "Surface 準備完了。描画先を登録 (usbMode=$usbMode)")
         decoder.onVideoFormat(videoW, videoH)
         decoder.setSurface(holder.surface)
-        if (usbMode) {
-            // USB: localhost に接続して受信開始。フレームはデコーダへ直接流す。
-            val (dw, dh) = deviceLandscapeSize()
-            val receiver = UsbVideoReceiver(
-                sink = decoder,
-                onFormat = { w, h -> onUsbFormat(w, h) },
-                deviceWidth = dw,
-                deviceHeight = dh,
-                onError = { msg ->
-                    runOnUiThread {
-                        if (!isFinishing) {
-                            android.widget.Toast.makeText(this, "USB 接続失敗: $msg", android.widget.Toast.LENGTH_LONG).show()
-                            finish()
-                        }
-                    }
-                }
-            )
-            usbReceiver = receiver
-            receiver.start()
+        if (aoaMode) {
+            startAoaReceiver()
+        } else if (usbMode) {
+            // 停滞時はデコーダが自己リセットし Mac の定期 IDR で復帰する（再接続はしない）。
+            // 接続が切れた時のみ UsbVideoReceiver.onError 経由で startUsbReceiver する。
+            startUsbReceiver()
         } else {
             NativeBridge.frameSink = decoder
         }
@@ -302,14 +446,20 @@ class MirrorActivity : Activity(), SurfaceHolder.Callback {
         Log.i(TAG, "Surface 破棄。描画先を解除")
         usbReceiver?.stop()
         usbReceiver = null
+        aoaReceiver?.stop()
+        aoaReceiver = null
         NativeBridge.frameSink = null
         decoder.setSurface(null)
     }
 
     override fun onDestroy() {
         uiHandler.removeCallbacks(hideControlsRunnable)
+        uiHandler.removeCallbacks(renotifyRunnable)
+        uiHandler.removeCallbacks(aoaRetryRunnable)
         usbReceiver?.stop()
         usbReceiver = null
+        aoaReceiver?.stop()
+        aoaReceiver = null
         decoder.onFirstFrame = null
         NativeBridge.mirrorUiListener = null
         NativeBridge.videoSizeListener = null
@@ -345,5 +495,11 @@ class MirrorActivity : Activity(), SurfaceHolder.Callback {
         private const val TAG = "DisproidReceiver"
         /** USB(adb) 受信モードで起動する Intent extra。 */
         const val EXTRA_USB = "io.disproid.receiver.USB_MODE"
+        /** 切断検知から再接続を試みるまでの待ち(ms)。短いほど復帰が速い。 */
+        private const val RECONNECT_DELAY_MS = 150L
+        /** 画面サイズ変化の再通知 debounce(ms)。回転アニメ中の連続レイアウトを1回に畳む。 */
+        private const val RENOTIFY_DEBOUNCE_MS = 250L
+        /** AOA 受信の再接続リトライ間隔(ms)。抜き差し/再遷移を待つので少し長め。 */
+        private const val AOA_RETRY_MS = 700L
     }
 }

@@ -1,17 +1,19 @@
 package io.disproid.receiver
 
+import android.net.LocalSocket
+import android.net.LocalSocketAddress
 import android.util.Log
 import java.io.DataInputStream
-import java.net.InetSocketAddress
-import java.net.Socket
 import java.nio.ByteBuffer
 import kotlin.concurrent.thread
 
 /**
  * USB(adb reverse) 経由で Mac ヘルパーから映像を受信する。
  *
- * Mac ヘルパーが `adb reverse tcp:27184 tcp:27184` を設定済みなので、
- * 端末の localhost:27184 へ接続すると Mac の FrameServer に届く。
+ * Mac ヘルパーが `adb reverse localabstract:disproid tcp:27184` を設定済みなので、
+ * 端末側の abstract Unix domain socket "disproid" へ接続すると Mac の FrameServer に届く。
+ * （tcp ループバックを使わず scrcpy と同じ abstract socket にすることで、
+ *  端末側 TCP スタックを経由させず adb トランスポートの安定性を上げる狙い）
  *
  * プロトコル（FrameServer.swift と一致）:
  *   ヘッダ(14B): "DPRD" + version(1) + codec(1: 0=H264,1=H265) + width(4,BE) + height(4,BE)
@@ -24,11 +26,9 @@ class UsbVideoReceiver(
     /** タブレットの実画面解像度(landscape)。接続時に Mac へ通知し、Mac が一致する仮想ディスプレイを作る。 */
     private val deviceWidth: Int,
     private val deviceHeight: Int,
-    private val host: String = "127.0.0.1",
-    private val port: Int = 27184,
 ) {
     @Volatile private var running = false
-    private var socket: Socket? = null
+    private var socket: LocalSocket? = null
     private var worker: Thread? = null
 
     fun start() {
@@ -48,20 +48,22 @@ class UsbVideoReceiver(
     private fun loop() {
         var ptsUs = 0L
         try {
-            val s = Socket()
-            s.connect(InetSocketAddress(host, port), 5000)
-            s.tcpNoDelay = true
+            val s = LocalSocket()
+            s.connect(LocalSocketAddress(ABSTRACT_NAME, LocalSocketAddress.Namespace.ABSTRACT))
+            // 読み取りタイムアウト。adb トンネルが切れずに転送停止する「ハーフ詰まり」
+            // (接続は生きているのにデータが来ない)を検知し、再接続で復帰させる。
+            s.soTimeout = READ_TIMEOUT_MS
             socket = s
 
             // 接続要求: 自分の画面解像度を通知（"DPRQ" + width + height, BE）
-            val out = java.io.DataOutputStream(s.getOutputStream())
+            val out = java.io.DataOutputStream(s.outputStream)
             out.writeBytes("DPRQ")
             out.writeInt(deviceWidth)
             out.writeInt(deviceHeight)
             out.flush()
             Log.i(TAG, "解像度を通知: ${deviceWidth}x${deviceHeight}")
 
-            val input = DataInputStream(s.getInputStream().buffered(1 shl 16))
+            val input = DataInputStream(s.inputStream.buffered(1 shl 16))
 
             // ヘッダ
             val magic = ByteArray(4)
@@ -86,7 +88,16 @@ class UsbVideoReceiver(
             var statT0 = System.currentTimeMillis()
             while (running) {
                 val len = input.readInt() // アクセスユニット長(BE)
-                if (len <= 0) continue
+                // 正常な access unit は高々数 MB。範囲外の長さを読んだらフレーム境界が
+                // ズレた(ストリーム破損)とみなす。巨大値で ByteArray を確保すると OOM で
+                // プロセスごと落ちるため、その前に接続を捨てて再接続させる
+                // (再接続すれば Mac が必ずキーフレームから送り直すので復帰する)。
+                if (len == 0) continue  // キープアライブ（adb トンネル維持用の空フレーム）。読み飛ばす
+                if (len < 0 || len > MAX_AU_BYTES) {
+                    Log.e(TAG, "異常なフレーム長: $len → ストリーム破損とみなし再接続")
+                    onError("ストリーム破損 (len=$len)")
+                    return
+                }
                 if (len > work.size) work = ByteArray(len)
                 input.readFully(work, 0, len)
                 sink.onVideoFrame(ByteBuffer.wrap(work, 0, len), len, ptsUs)
@@ -109,5 +120,13 @@ class UsbVideoReceiver(
 
     companion object {
         private const val TAG = "DisproidReceiver"
+        /** Mac の `adb reverse localabstract:disproid tcp:27184` と一致させる abstract socket 名。 */
+        private const val ABSTRACT_NAME = "disproid"
+        /** 1 アクセスユニット長の上限(32MB)。これを超える長さはストリーム破損とみなす。 */
+        private const val MAX_AU_BYTES = 32 * 1024 * 1024
+        /** 読み取りタイムアウト(ms)。この時間データが来なければ詰まり/USB切断とみなし再接続する。
+         *  Mac 側が App Nap 抑止＋キープアライブで送信を維持するので誤発火しにくい。
+         *  固まり検知を速くするため短めにする。 */
+        private const val READ_TIMEOUT_MS = 5000
     }
 }

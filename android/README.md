@@ -1,9 +1,13 @@
 # Disproid Receiver (Android) — 開発者向け
 
-Android タブレットを Mac のワイヤレス拡張ディスプレイにするための **AirPlay 受信機アプリ**。
-自分を **Apple TV として mDNS 公開**し、macOS の画面ミラーリング一覧に Apple TV 種別で出現する。
-接続が来ると **UxPlay 由来のネイティブ AirPlay コア**が RTSP/ペアリング/FairPlay を処理し、
-受信した H.264 / H.265 を **MediaCodec → Surface** で全画面表示する。
+Android タブレットを Mac の拡張ディスプレイにするための受信アプリ。3 つの経路で受信できる:
+
+1. **AirPlay（ワイヤレス）**: 自分を **Apple TV として mDNS 公開**し、macOS の画面ミラーリング一覧に出現。
+   **UxPlay 由来のネイティブ AirPlay コア**が RTSP/ペアリング/FairPlay を処理（`AdvertiseService`→ネイティブ→`MirrorActivity`）。
+2. **USB / adb（有線）**: Mac ヘルパーが `adb reverse` で張ったトンネルへ接続（`UsbVideoReceiver`、localabstract `disproid`）。
+3. **USB / AOA（有線・実験的）**: accessory モードで起動し accessory FD を直接読む（`AoaVideoReceiver`）。USB デバッグ不要。
+
+いずれの経路も受信した H.264 / H.265 を **`H264Decoder`（MediaCodec → Surface）** に集約して全画面表示する。
 
 > 利用者向けの使い方（Mac 側前準備・インストール・操作）は、リポジトリ直下の [`../README.md`](../README.md) を参照。
 
@@ -37,6 +41,19 @@ MirrorActivity ◀─ VideoSink(JNI) ◀────────── └ UxPla
   H.264 / H.265 を `video_set_codec` 通知で判別し MediaCodec の MIME を自動切替する。
 - **解像度**: タブレットのアスペクト比を保ち width=1920 基準に正規化して `/info` で報告（UI で選択も可能）。
   `maxFPS=60` を報告して 60fps を許可。
+
+### USB 受信（adb / AOA）
+
+- プロトコル共通: 送信 `DPRQ`(画面解像度通知) → 受信ヘッダ `DPRD`(ver/codec/width/height) → `length(4,BE)+Annex-B` 繰り返し。
+- `UsbVideoReceiver`(adb): localabstract socket `disproid` に接続。
+- `AoaVideoReceiver`(AOA): `UsbManager.openAccessory()` の FD を直接読み書き。
+  - **USB バルクは転送境界単位**で read されるため、小さい read を繰り返すと取りこぼしてフレーミングがズレる。
+    常に大きいバッファで read し蓄積バッファから必要分を切り出す。
+  - accessory FD は `available()` 非対応(EINVAL)なので `BufferedInputStream` は使わない。
+  - 起動経路: `AndroidManifest` の `USB_ACCESSORY_ATTACHED` intent-filter + `res/xml/accessory_filter.xml`
+    (manufacturer=`Disproid` / model=`Disproid Display`) で `MirrorActivity` を AOA モードで自動起動。
+- **画面の向き**: USB モードは `SCREEN_ORIENTATION_FULL_USER` でシステムの向きに追従。`MirrorActivity` が
+  ルートのレイアウト変化を監視して実解像度の変化を検知し、Mac へ再通知（縦↔横の仮想ディスプレイ追従。adb 経路）。
 
 ## ビルド環境
 
@@ -115,3 +132,5 @@ native-deps/
 - H.265 高解像度（4K）時のデコード負荷検証
 - release ビルド＋署名（現状は debug 署名の APK を配布）
 - バックグラウンド起動制限下での MirrorActivity 自動前面化の確実性
+- AOA: 配信中の回転リビルド（再ハンドシェイク。現状は起動時の向きで固定）
+  ※ 切断時の自動再接続は対応済み（onNewIntent 再 attach + リトライ）

@@ -53,6 +53,12 @@ class H264Decoder : VideoSink {
     private var statFed = 0
     private var statRendered = 0
 
+    /** 直近の描画時刻(ms)。0 = まだ1度も描画していない。ウォッチドッグで停滞検出に使う。 */
+    @Volatile private var lastRenderMs: Long = 0
+
+    /** 直近に入力(feed)した時刻(ms)。入力途絶と真のデコーダハングを区別するのに使う。 */
+    @Volatile private var lastFedMs: Long = 0
+
     // ---- VideoSink（ネイティブスレッドから） ----
 
     override fun onVideoFormat(width: Int, height: Int) {
@@ -71,14 +77,13 @@ class H264Decoder : VideoSink {
         buffer.limit(len)
         buffer.get(arr, 0, len)
         val frame = Frame(arr, len, ptsUs)
-        // P フレームを途中で捨てると参照が壊れて固まるため、ドロップせずブロッキングで詰める。
-        // キューが満杯なら呼び出し元(受信スレッド)が待つ＝バックプレッシャー。
-        // 送信側(Mac)はこの詰まりを検知してエンコード前に間引く。
-        try {
-            queue.put(frame)
-        } catch (e: InterruptedException) {
-            recycle(arr)
-            Thread.currentThread().interrupt()
+        // 受信スレッドを絶対にブロックしない。満杯なら最古フレームを捨てて受信を継続する。
+        // 受信が滞ると adbd の送信バッファが溢れて adb forward が切れる(EOF/RST)ため、
+        // 滞留を作らないことを最優先する。捨てると参照が崩れることがあるが、Mac は
+        // 約1秒ごとに IDR を送るので緑化は一瞬で回復する（切断＋2秒再接続より体感が良い）。
+        while (!queue.offer(frame)) {
+            val old = queue.poll() ?: break
+            recycle(old.data)
         }
     }
 
@@ -87,6 +92,13 @@ class H264Decoder : VideoSink {
             clearQueue()
             needFlush = true   // 次接続に備えてデコーダをflushしキーフレーム待ちに戻す
         }
+    }
+
+    /** 再接続時などに呼ぶ。キーフレーム待ちに戻し、前接続の状態(描画時刻等)を持ち越さない。
+     *  これをしないと再接続直後にウォッチドッグが誤発火する。 */
+    fun requestFlush() {
+        clearQueue()
+        needFlush = true
     }
 
     override fun onVideoCodec(isH265: Boolean) {
@@ -142,12 +154,36 @@ class H264Decoder : VideoSink {
                     pendingReconfigure = false
                     codec?.let { safeRelease(it) }; codec = null
                     sps = null; pps = null; vps = null; sawKeyframe = false
+                    lastRenderMs = 0
+                    lastFedMs = 0
+                    firstFrameDone = false
                 }
                 // 再接続(AirPlay)時はキーフレーム待ちに戻し csd も集め直す
                 if (needFlush) {
                     needFlush = false
                     codec?.let { safeRelease(it) }; codec = null
                     sps = null; pps = null; vps = null; sawKeyframe = false
+                    lastRenderMs = 0
+                    lastFedMs = 0
+                    firstFrameDone = false
+                }
+                // ウォッチドッグ: 出力が一定時間止まったらデコーダをリセット
+                // (描画がハングして戻らない症状を、次のキーフレーム到来で自動回復させる)
+                val lr = lastRenderMs
+                val lf = lastFedMs
+                // 「最近 feed しているのに描画が止まっている」= デコーダの真のハング時のみリセット。
+                // 入力自体が途切れている(TCP 一時詰まり等)場合は再接続しても無駄なので待つ。
+                if (codec != null && lr != 0L && (now - lr) > WATCHDOG_STALL_MS &&
+                    lf != 0L && (now - lf) < WATCHDOG_STALL_MS) {
+                    Log.w(TAG, "出力停滞 ${now - lr}ms (入力継続中) → デコーダをリセット")
+                    safeRelease(codec!!); codec = null
+                    sps = null; pps = null; vps = null; sawKeyframe = false
+                    lastRenderMs = 0
+                    lastFedMs = 0
+                    firstFrameDone = false
+                    clearQueue()
+                    // 接続は張り直さない。Mac は IDR を定期送出しているので、次の
+                    // キーフレーム到来で自動的に再構成され描画が戻る（再接続のハンドシェイク不要）。
                 }
 
                 val frame = queue.poll(15, TimeUnit.MILLISECONDS)
@@ -198,6 +234,7 @@ class H264Decoder : VideoSink {
             ib.put(f.data, 0, f.len)
             c.queueInputBuffer(inIdx, 0, f.len, f.ptsUs, 0)
             statFed++
+            lastFedMs = System.currentTimeMillis()
         } else {
             Log.w(TAG, "フレーム超過: ${f.len} > ${ib.remaining()}")
             c.queueInputBuffer(inIdx, 0, 0, f.ptsUs, 0)
@@ -210,6 +247,7 @@ class H264Decoder : VideoSink {
         while (idx >= 0) {
             c.releaseOutputBuffer(idx, true) // render=true で Surface へ即描画
             statRendered++
+            lastRenderMs = System.currentTimeMillis()
             if (!firstFrameDone) {
                 firstFrameDone = true
                 onFirstFrame?.invoke()
@@ -338,5 +376,6 @@ class H264Decoder : VideoSink {
     companion object {
         private const val TAG = "DisproidReceiver"
         private const val QUEUE_CAP = 3  // 浅め＝低遅延。溢れたらブロックしてバックプレッシャー(ドロップしない)
+        private const val WATCHDOG_STALL_MS = 3000L  // 出力停滞のしきい値(ms)
     }
 }
