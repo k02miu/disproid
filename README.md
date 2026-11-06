@@ -111,6 +111,12 @@ Mac ヘルパーは現在 **ad-hoc 署名**（無料）のため、ダウンロ�
 （「開発元を確認できません」）が出ます。**右クリック → 開く** で起動できます。
 警告を完全に無くすには Apple Developer Program（有料）での署名＋公証が必要です（[`mac/README.md`](mac/README.md) 参照）。
 
+## Maintainers
+
+- 神谷 未由人（GitHub: [@k02miu](https://github.com/k02miu)）— 開発・保守、セキュリティ対応
+
+脆弱性の報告方法は [`SECURITY.md`](SECURITY.md) を参照してください。
+
 ## ライセンス
 
 本プロジェクトは [UxPlay](https://github.com/FDH2/UxPlay)（GPL-3.0）を移植・利用しているため **GPL-3.0** です。
