@@ -100,7 +100,11 @@ export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
 # CMake が libplist/airplay/JNI をコンパイルし libdisproid.so にリンクする
 ```
 
-CI（GitHub Actions）では `v*` タグ push でビルドし、APK を Release に添付する（[`../.github/workflows/release.yml`](../.github/workflows/release.yml)）。
+通常の Gradle ビルドで通知を `assets/oss/` に生成し、アプリのメニュー「ライセンスとソース」から閲覧できます。
+対応ソース用の依存収集は `./gradlew :app:collectRuntimeSources` で行います。
+
+CI（GitHub Actions）では `v*` タグ push で APK / Mac ZIP / 対応ソースをすべて検証してから Release に添付します。
+配布手順は [`../DISTRIBUTION.md`](../DISTRIBUTION.md)、CI は [`../.github/workflows/release.yml`](../.github/workflows/release.yml) を参照。
 
 ## 動作確認（ログ）
 

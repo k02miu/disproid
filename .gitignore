@@ -1,4 +1,8 @@
 .DS_Store
+.build/
+dist/
+__pycache__/
+*.pyc
 
 # --- エディタ/エージェント/ローカル設定（公開しない） ---
 .claude/

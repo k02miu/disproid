@@ -3,6 +3,10 @@
 Android タブレットを、Mac の **拡張ディスプレイ（またはミラー）** として使うためのツールです。
 **ワイヤレス（AirPlay）** と **有線（USB）** の 2 通りで接続できます。
 
+> **配布済み版と開発版**: [v1.0.0](https://github.com/k02miu/disproid/releases/tag/v1.0.0) の有線接続は
+> **adb 方式（USB デバッグが必要）**です。以下の AOA 方式、縦画面への追従、追加解像度プリセットは
+> `main` の **未リリース機能**です。これらを試す場合は、Android と Mac の両方を同じコミットからビルドしてください。
+
 | | ワイヤレス (AirPlay) | 有線 (USB) |
 |---|---|---|
 | Mac 側ソフト | **不要**（標準 AirPlay） | **必要**（Disproid Helper.app） |
@@ -16,12 +20,13 @@ Android タブレットを、Mac の **拡張ディスプレイ（またはミ�
 
 ## ダウンロード
 
-[Releases](https://github.com/k02miu/disproid/releases) から取得できます（ビルド不要）:
+[v1.0.0 の Release](https://github.com/k02miu/disproid/releases/tag/v1.0.0) から取得できます（ビルド不要、AOA は未収録）:
 
 - `disproid-receiver-vX.Y.Z.apk` … Android 受信アプリ
 - `disproid-helper-vX.Y.Z.zip` … Mac ヘルパー（有線 USB 用、`.app`）
 
 ソースからビルドする場合は [`android/README.md`](android/README.md) / [`mac/README.md`](mac/README.md) を参照。
+ライセンスの同梱場所と対応ソースの配布手順は [`DISTRIBUTION.md`](DISTRIBUTION.md) を参照。
 
 ---
 
@@ -63,11 +68,13 @@ Mac 側に追加ソフトは不要。macOS 標準の AirPlay を使います。
    - 解像度は **「自動（タブレットに合わせる）」**（黒帯なし）か、各プリセット（16:9 / 16:10 / 4:3 / 3:2、縦向き 3:4 / 2:3 を含む。帯ありで任意指定）から選べます。
 3. 初回は **システム設定 → プライバシーとセキュリティ → 画面収録** で **Disproid Helper** を許可 →（再度「開始」）。
 4. タブレットで Disproid Receiver を開き **「USB で受信」** をタップ。
-5. タブレットに Mac の仮想ディスプレイ（拡張画面）が表示されます。**タブレットを縦持ち（または縦固定）にすると縦の拡張ディスプレイ**になります。
+5. タブレットに Mac の仮想ディスプレイ（拡張画面）が表示されます。**開発版（未リリース）では、タブレットを縦持ち（または縦固定）にすると縦の拡張ディスプレイ**になります。
 
 > Mac の「システム設定 → ディスプレイ」で配置を調整できます（拡張ディスプレイとして扱われます）。
 
-### 実験的: AOA 方式（USB デバッグ不要）
+### 未リリース・実験的: AOA 方式（USB デバッグ不要）
+
+v1.0.0 の APK / Mac ZIP には含まれません。両アプリを同じ `main` のコミットからビルドしてください。
 
 adb を介さず **AOA（Android Open Accessory）で直接 USB 通信**する方式も実装しています。
 adb スタックに依存しないため接続が安定し、**USB デバッグ（開発者向けオプション）も不要**です。
@@ -119,5 +126,6 @@ Mac ヘルパーは現在 **ad-hoc 署名**（無料）のため、ダウンロ�
 
 ## ライセンス
 
-本プロジェクトは [UxPlay](https://github.com/FDH2/UxPlay)（GPL-3.0）を移植・利用しているため **GPL-3.0** です。
+Disproid 本体は **GPL-3.0** で公開しています。Android 受信アプリに組み込む
+[UxPlay](https://github.com/FDH2/UxPlay) などの第三者コードには、それぞれのライセンス表記も適用されます。
 詳細は [`LICENSE`](LICENSE) と [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) を参照。

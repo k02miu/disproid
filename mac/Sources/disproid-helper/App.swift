@@ -127,6 +127,14 @@ struct ControlView: View {
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
+            if let licenses = Bundle.main.resourceURL?.appendingPathComponent("oss/index.html"),
+               FileManager.default.fileExists(atPath: licenses.path) {
+                Button("ライセンスとソース") {
+                    NSWorkspace.shared.open(licenses)
+                }
+                .frame(maxWidth: .infinity)
+            }
+
             Button("終了") {
                 engine.stop()
                 NSApplication.shared.terminate(nil)

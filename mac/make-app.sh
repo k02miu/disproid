@@ -21,6 +21,9 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp ".build/release/$BIN_NAME" "$APP/Contents/MacOS/$BIN_NAME"
 cp "Info.plist" "$APP/Contents/Info.plist"
 
+# ライセンス・第三者通知・対応ソース案内は署名前に同梱する。
+python3 ../scripts/distribution.py notices --output "$APP/Contents/Resources/oss"
+
 # SwiftPM のリソースバンドル（メニューバー画像）を Resources へ（Bundle.module が解決可能）
 if ls .build/release/*.bundle >/dev/null 2>&1; then
     cp -R .build/release/*.bundle "$APP/Contents/Resources/"
@@ -41,13 +44,18 @@ fi
 # 署名（リソース .bundle はコードでないため --deep は使わない）
 # 自己署名証明書(make-cert.sh)があればそれで署名 → 再ビルドしても画面収録の許可が維持される。
 # 無ければ ad-hoc（毎回許可リセットされる）。
+# コピー元から引き継いだ Finder 情報等は、生成したバンドルだけから除去する。
+xattr -cr "$APP"
 CERT_NAME="Disproid Self-Signed"
-if security find-identity -p codesigning 2>/dev/null | grep -q "${CERT_NAME}"; then
+if [ -n "${CODESIGN_IDENTITY:-}" ]; then
+    echo "==> sign with requested identity: ${CODESIGN_IDENTITY}"
+    codesign --force --sign "${CODESIGN_IDENTITY}" "$APP"
+elif security find-identity -p codesigning 2>/dev/null | grep -q "${CERT_NAME}"; then
     echo "==> sign with cert: ${CERT_NAME}"
-    codesign --force --sign "${CERT_NAME}" "$APP" >/dev/null 2>&1 || echo "(sign failed)"
+    codesign --force --sign "${CERT_NAME}" "$APP"
 else
     echo "==> ad-hoc sign (no self-signed cert; run make-cert.sh)"
-    codesign --force --sign - "$APP" >/dev/null 2>&1 || echo "(sign skipped)"
+    codesign --force --sign - "$APP"
 fi
 
 echo "==> 完成: $HERE/$APP"

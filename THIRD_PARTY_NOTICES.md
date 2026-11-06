@@ -1,66 +1,38 @@
 # Third-Party Notices / 組み込み OSS のライセンス表記
 
-本プロジェクト（Disproid）は以下のサードパーティ・ソフトウェアを利用・移植・同梱しています。
-各コンポーネントのライセンス条件に従ってください。
+Disproid 本体は [GPL-3.0](LICENSE) で公開しています。以下は各第三者コードの元の条件です。
+Android は CMake で airplay / libplist / libcrypto を `libdisproid.so` に静的リンクします。
+Mac Helper はこれら Android 用ライブラリをリンクせず、自前の Swift / Objective-C コードと Apple のシステム framework を使います。
 
-> **重要**: 本プロジェクトはネイティブ AirPlay コアとして **UxPlay（GPLv3）** を移植・静的リンクしています。
-> そのため、**本プロジェクトの配布物全体が GPL-3.0** の条件下に置かれます（リポジトリ直下の [`LICENSE`](LICENSE) 参照）。
+## Android ネイティブコード
 
----
-
-## UxPlay
-
-- 用途: AirPlay 受信プロトコルのネイティブコア（RTSP / ペアリング / FairPlay / RTP / H.264・H.265 取り出し）
-- 取り込み: ソースを `android/app/src/main/cpp/airplay/` に vendoring（`renderers/` は除外、`dnssd.c` は Android 版 `dnssd_android.c` に差し替え）
-- 配布元: https://github.com/FDH2/UxPlay
-- ライセンス: **GPL-3.0**（プロジェクト全体）。`lib/`（移植した airplay コア）の各ヘッダは **LGPL-2.1** 表記を保持。
-  - 各ソースファイル冒頭のライセンスヘッダを参照。
-
-## libplist
-
-- 用途: バイナリ plist のパース/生成（AirPlay の各種メッセージ）
-- 取り込み: ソースを `android/app/src/main/cpp/third_party/libplist/` に vendoring し、CMake で直接ビルド
-- 配布元: https://github.com/libimobiledevice/libplist
-- ライセンス: **LGPL-2.1-or-later**
-- ライセンス全文: `android/app/src/main/cpp/third_party/libplist/COPYING`
-
-## llhttp
-
-- 用途: HTTP/RTSP リクエストのパース
-- 取り込み: UxPlay 同梱分を `android/app/src/main/cpp/airplay/llhttp/` に vendoring
-- 配布元: https://github.com/nodejs/llhttp
-- ライセンス: **MIT**
-- ライセンス全文: `android/app/src/main/cpp/airplay/llhttp/LICENSE-MIT`
-
-## playfair (FairPlay)
-
-- 用途: FairPlay ハンドシェイク
-- 取り込み: UxPlay 同梱分を `android/app/src/main/cpp/airplay/playfair/` に vendoring
-- ライセンス全文: `android/app/src/main/cpp/airplay/playfair/LICENSE.md`
-
-## OpenSSL (libcrypto)
-
-- 用途: 暗号処理（AES / Ed25519 / SHA / SRP 等）
-- 取り込み: ソースは同梱せず、ビルド時に upstream からクロスコンパイルして静的リンク
-  （`android/native-deps/build-openssl-android.sh`、対象 OpenSSL 3.3.2）
-- 配布元: https://github.com/openssl/openssl
-- ライセンス: **Apache-2.0**（OpenSSL 3.x）
-
-## AndroidX / Material Components
-
-- 用途: アプリ UI（Material 3、AppCompat、SplashScreen）
-- 取り込み: Gradle 依存（同梱なし、ビルド時に取得）
-- ライセンス: **Apache-2.0**
-
----
-
-## 早見表
-
-| コンポーネント | ライセンス | 取り込み形態 |
+| コンポーネント | 用途・取得元 | 元のライセンスと原文 |
 |---|---|---|
-| UxPlay | GPL-3.0（lib は LGPL-2.1 表記） | ソース vendoring |
-| libplist | LGPL-2.1-or-later | ソース vendoring |
-| llhttp | MIT | ソース vendoring |
-| playfair | （`playfair/LICENSE.md` 参照） | ソース vendoring |
-| OpenSSL (libcrypto) | Apache-2.0 | ビルド時クロスコンパイル・静的リンク |
-| AndroidX / Material | Apache-2.0 | Gradle 依存 |
+| UxPlay AirPlay コア | `android/app/src/main/cpp/airplay/`。https://github.com/FDH2/UxPlay のコアを移植、dnssd を Android 用に置換 | GPL-3.0-or-later のファイル（例: `crypto.c`）と LGPL-2.1-or-later のファイル（例: `pairing.c`）が混在。各ファイルのヘッダ、[GPLv3](LICENSE)、[LGPL2.1](licenses/LGPL-2.1.txt) を参照 |
+| playfair | `airplay/playfair/`、FairPlay ハンドシェイク | [同梱の GPLv3 原文](android/app/src/main/cpp/airplay/playfair/LICENSE.md) |
+| libplist / libcnary | `android/app/src/main/cpp/third_party/libplist/`、plist パース/生成。https://github.com/libimobiledevice/libplist | ライブラリのヘッダは LGPL-2.1-or-later。[LGPL2.1 原文](licenses/LGPL-2.1.txt)（同梱 `libcnary/COPYING` と同じ）。既存の `libplist/COPYING` は GPLv2 全文であり、LGPL 全文ではありません。元ファイルは保持しています |
+| llhttp | `airplay/llhttp/`、HTTP/RTSP パース。https://github.com/nodejs/llhttp | MIT、Copyright Fedor Indutny, 2018。[原文](android/app/src/main/cpp/airplay/llhttp/LICENSE-MIT) |
+| SRP (csrp) | `airplay/srp.c`。https://github.com/cocagne/csrp | MIT、Copyright (c) 2010 / 2013 Tom Cocagne。原文と UxPlay 側の改変表示は同ファイル冒頭 |
+| jsmn | `third_party/libplist/src/jsmn.c` | MIT、Copyright (c) 2010 Serge A. Zaitsev。原文・改変表示は同ファイル冒頭 |
+| time64 | `third_party/libplist/src/time64.c` | MIT、Copyright (c) 2007-2010 Michael G Schwern。原文は同ファイル冒頭 |
+| OpenSSL libcrypto 3.3.2 | `android/native-deps/build-openssl-android.sh` で `openssl-3.3.2` をビルド。https://github.com/openssl/openssl | [Apache-2.0 原文](licenses/Apache-2.0.txt)。著作権・追加通知は実際の OpenSSL ソースに保持 |
+
+libplist の手書き `config.h` のバージョン文字列だけで vendor 一式が upstream の特定リリースと同一とは保証しません。
+対応ソースには、このリポジトリに収録した実際の vendor 一式を含めます。
+
+## Android の Gradle 依存
+
+直接依存は AndroidX AppCompat 1.7.0 / Core SplashScreen 1.0.1 と Material Components 1.12.0（Apache-2.0）です。
+これらと推移的依存は、ビルド時に取得して **APK に組み込まれます**。
+[Apache-2.0 全文](licenses/Apache-2.0.txt) に加え、実際に解決した AAR / JAR 内の LICENSE / NOTICE と依存一覧を
+ビルド時に `runtime-notices/` と `runtime-dependencies.json` に収集します。
+直接依存3件だけを配布対象の全依存とは扱いません。
+
+## 配布物に含める原文と対応ソース
+
+`scripts/distribution.py notices` は本通知、GPLv3 / LGPL2.1 / Apache2.0、llhttp / playfair の原文、
+vendor ソース先頭の著作権・許諾文（SRP / jsmn / time64 を含む）を改変せず収集します。
+Android ではさらに実際の Gradle ランタイム依存の通知を収集します。
+収集先、利用者の閲覧方法、ソースアーカイブの作成手順は [DISTRIBUTION.md](DISTRIBUTION.md) を参照してください。
+
+各ファイルの著作権表示・許諾文を保持してください。本通知は各ライセンス原文に代わるものではありません。

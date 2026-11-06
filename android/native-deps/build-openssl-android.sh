@@ -44,6 +44,21 @@ if [ ! -f "$SRC/Configure" ]; then
     git clone --depth 1 --branch "$OPENSSL_TAG" https://github.com/openssl/openssl.git "$SRC"
 fi
 
+# 対応ソースと静的ライブラリが同じ版になるよう、既存 checkout も検証する。
+if [ -e "$SRC/.git" ]; then
+    EXPECTED_COMMIT="$(git -C "$SRC" rev-parse "$OPENSSL_TAG^{commit}")"
+    if [ "$(git -C "$SRC" rev-parse HEAD)" != "$EXPECTED_COMMIT" ] ||
+       ! git -C "$SRC" diff --quiet HEAD --; then
+        echo "OpenSSL must be an unmodified checkout of $OPENSSL_TAG" >&2
+        exit 1
+    fi
+elif [ -f "$SRC/SOURCE_ARCHIVE.json" ]; then
+    python3 "$HERE/../../scripts/distribution.py" verify-openssl "$SRC"
+else
+    echo "OpenSSL source identity is missing" >&2
+    exit 1
+fi
+
 cd "$SRC"
 make clean >/dev/null 2>&1 || true
 

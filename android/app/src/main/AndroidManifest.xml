@@ -34,6 +34,8 @@
             </intent-filter>
         </activity>
 
+        <activity android:name=".LicensesActivity" android:exported="false" />
+
         <!-- ミラーリング映像の全画面表示。Mac の画面は横向き想定。
              AOA(USB Accessory) 接続時はこの Activity が accessory intent で直接起動される。 -->
         <activity

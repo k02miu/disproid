@@ -99,6 +99,19 @@ class MainActivity : AppCompatActivity() {
         StatusBus.setListener { running, status -> applyState(running, status) }
     }
 
+    override fun onCreateOptionsMenu(menu: android.view.Menu): Boolean {
+        menu.add(0, MENU_LICENSES, 0, "ライセンスとソース")
+        return true
+    }
+
+    override fun onOptionsItemSelected(item: android.view.MenuItem): Boolean {
+        if (item.itemId == MENU_LICENSES) {
+            startActivity(Intent(this, LicensesActivity::class.java))
+            return true
+        }
+        return super.onOptionsItemSelected(item)
+    }
+
     override fun onPause() {
         super.onPause()
         StatusBus.setListener(null)
@@ -145,6 +158,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     companion object {
+        private const val MENU_LICENSES = 1000
         private const val REQ_NOTIF = 100
     }
 }

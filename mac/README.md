@@ -56,6 +56,9 @@ bash make-app.sh                 # swift build -c release → .app 梱包 → ad
 open "Disproid Helper.app"       # メニューバーに常駐
 ```
 
+`make-app.sh` は署名前に `Contents/Resources/oss/` へライセンス・第三者通知・対応ソース案内を同梱します。
+メニューバーの「ライセンスとソース」からオフラインで閲覧できます。配布時は [`../DISTRIBUTION.md`](../DISTRIBUTION.md) に従ってください。
+
 開発中は `swift build` でコンパイル確認のみも可（ただし TCC 許可はバンドル単位なので、
 実動作確認は `.app` を起動して行うのが確実）。
 
